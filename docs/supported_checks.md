@@ -28,6 +28,11 @@ Evidence never contains the full raw input.
 | SG011 | ERROR | Convert an unterminated-block-comment preprocessing diagnostic into a finding. |
 | SG014 | INFO | Convert an unsupported-card diagnostic into a finding without interpreting the card. |
 | SG015 | ERROR | Convert malformed-card recovery or an input-level parser failure into a finding. |
+| SG016 | ERROR | Report a missing PBED target from an explicit uploaded bundle or authorized local project. |
+| SG017 | ERROR | Reject an absolute PBED target, canonical root escape, directory target, or other local-reference policy violation. |
+| SG018 | ERROR | Report duplicate or ambiguous normalized supporting-file names. |
+| SG019 | ERROR | Report an empty PBED file, unsupported encoding, blank or malformed record, non-finite coordinate, or non-positive radius; invalid records are excluded. |
+| SG020 | ERROR | Reject an external file or PBED record stream that exceeds configured limits. |
 
 SG008 and SG009 evaluate every union-separated intersection term independently. For
 example, `-s : s` does not contradict itself because the two signs occur in separate
@@ -38,32 +43,86 @@ sampler below evaluates only the documented subset.
 
 Geometry sampling is a separate language-independent numerical operation, not a
 `Finding` rule and not part of CLI exit status. In the Streamlit interface, the user
-must explicitly confirm `xmin`, `xmax`, `ymin`, `ymax`, a z coordinate, and a square
-grid resolution before sampling starts. Range endpoints are included.
+must select one parsed Universe and explicitly confirm `xmin`, `xmax`, `ymin`, `ymax`,
+and a square-grid resolution before sampling starts. Range endpoints are included.
+Universe `0` is the deterministic default when present; otherwise the lexically first
+available parsed Universe is selected and disclosed.
 
-Only parsed cells whose complete region expression uses one unambiguous, valid `cyl`
-or `sqc` definition are evaluated. A cell with an unsupported, undefined, duplicate,
-or malformed surface—or unsupported cell syntax—is listed as excluded and is never
-approximated. The reported classifications therefore describe the included supported
-cells. If no cells can be evaluated, every grid point is indeterminate.
+Cells are grouped by their exact `universe` value before geometry preparation. Match
+counts never cross Universe boundaries. The selected Universe is evaluated only in
+its local coordinate system: `fill`, pin, lattice, repeated-geometry, transformation,
+and nested-Universe expansion are not implemented.
+
+Only parsed Cells whose complete region expression uses one unambiguous, valid `cyl`
+or `sqc` definition are evaluated. A Cell with unsupported syntax, an undefined,
+duplicate, unsupported, or malformed Surface, or an empty region is listed as excluded
+and is never approximated. Same-name Cell definitions within the selected Universe are
+all excluded, preventing duplicate definitions from becoming artificial full-region
+overlaps. Same names in different Universes are independent for geometry preparation.
+SG002 remains the canonical static-analysis finding.
 
 Each point is classified as:
 
-- undefined-region candidate when zero included cells match;
-- normal when exactly one included cell matches;
-- overlap candidate when two or more included cells match;
-- indeterminate when a supported surface lies within the configured absolute boundary
-  tolerance, or no cell can be evaluated.
+- undefined-region candidate when zero supported Cells match and coverage is complete;
+- normal when exactly one supported Cell matches and coverage is complete;
+- overlap candidate when two or more supported Cells match;
+- incomplete/unsupported when coverage is incomplete and fewer than two definite
+  supported Cells match;
+- boundary-indeterminate when a supported surface lies within the configured absolute
+  boundary tolerance and fewer than two definite supported Cells match.
+
+Coverage is complete only when every parsed Cell in the selected Universe is evaluated.
+If any Cell is excluded, `undefined_detection_enabled` is false, zero-match points are
+indeterminate, and one-match points mean only one supported-subset match—not global
+uniqueness. Definite overlap among two or more evaluated Cells is still reported as a
+supported-subset overlap candidate. Result metadata records the selected Universe,
+coverage state, supported/excluded Cell counts, and incomplete-domain point count.
 
 The code default for boundary tolerance is `1e-9`; the interface exposes it explicitly.
 The result includes a Matplotlib classification plot, point counts, deterministic
 representative coordinates, involved cell names for overlap candidates, excluded-cell
-reasons, and the confirmed range and resolution. z is recorded for the selected XY
-slice, while the currently supported infinite-z `cyl` and `sqc` forms are invariant in
-z.
+reasons, and the confirmed Universe, range, and resolution. The canonical z value is
+reserved for future extension, but the UI disables it and explicitly states that the
+currently supported infinite-z `cyl` and `sqc` forms are z-invariant.
+
+Before allocating the grid, the sampler estimates workload as grid points multiplied
+by the sum of evaluated Cell count and signed Surface-reference count. Requests above
+the code-configured default limit of `50,000,000` estimated operations are rejected.
+The default 100 × 100 grid remains usable. Full-grid Cell masks are processed and
+discarded incrementally rather than retained for every Cell.
 
 This is a sampling aid, not a geometric proof. Narrow gaps or overlaps between grid
 points may be missed, and the check does not replace the Serpent geometry plotter.
+
+The default Geometry view is separate from this diagnostic classification map. It
+uses compact categorical grids to show uniquely matched supported regions by exact
+Material or Cell name. Overlap, incomplete, undefined, and boundary states never
+masquerade as normal material occupancy. Both plots use discrete legends and preserve
+equal XY aspect ratio; neither changes `Finding` objects or CLI behavior.
+
+## Sandboxed PBED external references
+
+SG016–SG020 belong to the external-reference report, not the existing core
+`AnalysisReport`. This preserves current CLI, JSON, static-analysis exit codes, and
+Finding localization. Reference diagnostics use the same canonical severities and
+stable rule identifiers, include only logical relative names and record/line numbers,
+and never include raw PBED records or absolute backing paths.
+
+An uploaded bundle is resolved only against explicitly supplied names. An authorized
+local project requires a separate canonical root and explicit authorization before
+supporting-file content is read. Absolute references, root escapes, canonical symlink
+or junction escapes, missing targets, directory targets, ambiguous bundle names,
+unsupported UTF-8, byte limits, record limits, empty data, blank lines, and invalid
+five-field PBED records are deterministic failures. A file that disappears or becomes
+unreadable after preview produces a sanitized SG017 diagnostic rather than exposing a
+backing path.
+
+Valid placements may be summarized and visualized. The PBED XY slice uses the
+officially verified spherical interpretation: a sphere centered at `(x, y, zc)` with
+outer radius `r` intersects a selected plane `z` with radius
+`sqrt(r^2 - (z - zc)^2)`. This is a placement visualization only. Projected or sliced
+circles do not prove three-dimensional non-overlap, packing validity, transport
+correctness, or valid nested-universe geometry.
 
 ## Symbol and confidence policy
 
@@ -114,7 +173,7 @@ serpentguard check examples/valid_minimal.inp --format json
 
 ## Explicitly deferred
 
-- SG012 missing include and SG013 include cycle, pending a safe include sandbox.
+- SG012 missing include and SG013 include cycle; Prompt 6B resolves `pbed` data only.
 - Additional surface types, lattice/universe expansion, transformations, nested CSG,
   adaptive sampling, and 3D geometry visualization.
 - Detector and energy-grid semantic review.

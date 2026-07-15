@@ -24,8 +24,31 @@ The payload generator must be tested to ensure that source text is absent. AI fa
 
 - Store secrets in `.env` or `.streamlit/secrets.toml`; both are ignored by Git.
 - Store unpublished inputs under `local_inputs/` or `private_inputs/`; both are ignored by Git.
+- Private external geometry data may instead be stored under `local_reference_data/`
+  or `private_references/`; both are ignored by Git.
 - Add only sanitized, redistributable fixtures to `examples/`.
 - Inspect `git diff --cached` before every commit, especially before publishing the repository.
 - If a secret is ever staged or committed, remove it from history and rotate it immediately; adding it to `.gitignore` afterward is not sufficient.
 
 See the [canonical specification](../serpentguard_implementation_spec.md) for the authoritative privacy requirements.
+
+## Sandboxed external references
+
+PBED support has two local-only modes. Uploaded bundles resolve only among explicitly
+uploaded files. Authorized local projects require a separate root and canonicalize
+the main file and every target; absolute targets, targets outside the root, and
+canonical symlink/junction escapes are rejected where the operating system exposes
+them. The resolver does not scan directories or infer a broader root from an absolute
+main path.
+
+Normalized reports contain logical relative names, statuses, byte/record counts,
+bounding summaries, and sanitized diagnostics. They do not serialize backing absolute
+paths or raw input/PBED records. Backing bytes and canonical paths are also excluded
+from object representations. Local paths entered by a user remain runtime session
+state only and must never be placed in a future AI payload.
+
+The unpublished reference pair used during Prompt 6B was read locally only for minimal
+structural validation. Neither file, its filename, its absolute path, research
+coordinates, material data, nor source excerpt is redistributed in this repository.
+All committed PBED fixtures are independently written synthetic data and are not
+production reactor models.

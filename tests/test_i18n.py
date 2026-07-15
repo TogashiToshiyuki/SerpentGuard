@@ -24,6 +24,11 @@ def test_representative_static_ui_translation() -> None:
     assert translate("run.button", JAPANESE) == "検査を実行"
     assert translate("section.geometry", ENGLISH) == "6. Geometry plot"
     assert translate("section.geometry", JAPANESE) == "6. 幾何形状プロット"
+    assert translate("source.mode.uploaded_bundle", ENGLISH) == ("Uploaded file bundle")
+    assert translate("source.mode.uploaded_bundle", JAPANESE) == (
+        "アップロードしたファイル一式"
+    )
+    assert translate("reference.status.resolved", JAPANESE) == "解決済み"
 
 
 def test_all_literal_app_translation_keys_exist_in_english() -> None:

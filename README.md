@@ -4,7 +4,7 @@ SerpentGuard is a small local Streamlit application for deterministic preflight 
 
 ## Project status
 
-The local parser, deterministic static analyzer, bilingual Streamlit interface, and a deliberately limited 2D geometry sampler are implemented for a narrow `surf`, `cell`, and `mat` subset. The interface accepts one main input, records an optional analysis purpose, runs each check only after explicit user action, and provides summary counts, filterable findings, evidence, privacy-conscious parsed-model debugging data, and an XY sampling plot. Supporting files can be selected for future include handling but are not opened. No detector checker, include resolution, physics review, or AI integration has been implemented.
+The local parser, deterministic static analyzer, bilingual Streamlit interface, a deliberately limited 2D geometry sampler, and sandboxed PBED placement-file support are implemented. The interface accepts either an explicit uploaded bundle or an authorized local project, records an optional analysis purpose, runs each check only after explicit user action, and provides summary counts, filterable findings, evidence, privacy-conscious debugging data, dependency status, and local plots. No detector checker, include resolution, physics review, or AI integration has been implemented.
 
 The supported runtime is Python 3.11 or newer. SerpentGuard has no database and is intended to run locally rather than as an externally deployed server.
 
@@ -38,15 +38,65 @@ streamlit run app.py
 
 The equivalent module command is `python -m streamlit run app.py`.
 
+For a redistributable geometry demo, upload
+`tests/fixtures/geometry/pwr_pin_cell.inp`, run the deterministic check, sample
+Universe `0` over approximately `x,y = [-0.75, 0.75]`, and open the Geometry view.
+The fixture is independently written and is not a production reactor model.
+
 The interface supports English and Japanese (`日本語`), with English as the default.
 Use the language selector above the page title to switch languages. Switching redraws
 presentation text only: uploaded files, canonical findings, parsed results, and active
 finding filters are preserved, and deterministic analysis is not rerun automatically.
 
-After running the input check, confirm `xmin`, `xmax`, `ymin`, `ymax`, the XY grid
-resolution, and a z coordinate in the Geometry plot section. Geometry sampling is a
-separate explicit action. It evaluates only the documented `cyl` and `sqc` surface
-subset; unsupported cells are listed and excluded rather than approximated.
+Choose one input mode at the top of the application:
+
+- **Uploaded file bundle:** upload one main input and only the supporting files you
+  intend to make available. A supported relative PBED reference is matched by
+  normalized, case-insensitive Windows-style name. Unreferenced uploads are reported
+  as unused.
+- **Authorized local project:** enter one main file and an independent authorized
+  root. SerpentGuard first reads the main file and previews canonical in-root targets.
+  Supporting PBED content is opened only after a second explicit authorization action.
+  Absolute references and targets escaping the authorized root are rejected.
+
+The local resolver never scans a drive, home directory, or project tree. Absolute
+backing paths are not stored in normalized reference reports. No source or placement
+data is sent over the network.
+
+Prompt 6B supports only the documented one-line card
+`pbed UNI0 BGU "FILE" [pow]` and UTF-8 placement records of exactly
+`X Y Z R UNI`. Coordinates and the positive outer sphere radius are interpreted in
+centimetres. The PBED section reports valid/excluded records and the outer-sphere
+bounding box. It offers either the exact cross-section of each verified placement
+sphere at the selected z plane or an explicitly labeled XY center projection. These
+are placement visualizations, not packing-validity or definitive 3D-overlap checks.
+
+After running the input check, select exactly one parsed Universe and confirm `xmin`,
+`xmax`, `ymin`, `ymax`, and the XY grid resolution in the Geometry plot section.
+Universe `0` is preferred when available. Geometry sampling is a separate explicit
+action and evaluates the selected Universe only in its own local coordinate system. It
+does not expand `fill`, pins, lattices, transformations, or nested Universes.
+
+The default **Geometry view** displays the uniquely matched supported region by
+Material or Cell with a discrete categorical legend. The separate **Diagnostic view**
+shows normal, overlap, undefined, incomplete, and boundary-uncertain sample states.
+Both preserve equal XY scale and use nearest-neighbor rendering. This is a limited
+SerpentGuard visualization; it is not an exact replacement for Serpent's plotter.
+Application colors may differ from Serpent. When the exact supported
+`mat NAME DENS rgb R G B` form is present, material coloring can use that verified
+triplet.
+
+Japanese Matplotlib text uses an installed Japanese-capable font (Yu Gothic or Meiryo
+is preferred on Windows). On Linux, installing Noto Sans CJK JP is recommended. Fonts
+are not downloaded or bundled. If no candidate passes glyph validation, the app shows
+an actionable warning and falls back to English inside the plot instead of silently
+rendering square glyphs.
+
+The current `cyl` and `sqc` subset is invariant in z, so the reserved z control is
+disabled and does not affect results. Unsupported, ambiguous, malformed, and duplicate
+Cell definitions are listed and excluded rather than approximated. When any selected-
+Universe Cell is excluded, undefined-region detection is disabled: zero supported
+matches are shown as indeterminate because an excluded Cell may occupy that space.
 
 Inspect the CLI and parse a local UTF-8 fixture:
 
@@ -96,13 +146,18 @@ pre-commit install
 - [Specification index](docs/specification.md)
 - [Implemented syntax boundary](docs/supported_syntax.md)
 - [Supported checks and roadmap](docs/supported_checks.md)
+- [Geometry-sampling architecture](docs/geometry_sampling.md)
+- [External-reference and PBED architecture](docs/external_references.md)
 - [Localization architecture](docs/localization.md)
 - [Privacy policy](docs/privacy.md)
 - [Example-file policy](examples/README.md)
 
 ## Privacy and local files
 
-Keep unpublished Serpent inputs under `local_inputs/` or `private_inputs/`; both directories are ignored by Git. Environment files, Streamlit secrets, credentials, private keys, virtual environments, caches, and common Serpent output files are also ignored.
+Keep unpublished Serpent inputs under `local_inputs/`, `private_inputs/`,
+`local_reference_data/`, or `private_references/`; these directories are ignored by
+Git. Environment files, Streamlit secrets, credentials, private keys, virtual
+environments, caches, and common Serpent output files are also ignored.
 
 Before staging changes, review them with:
 
@@ -122,6 +177,28 @@ Only sanitized, redistributable fixtures should be added under `examples/`.
   grid points.
 - Geometry sampling supports only `cyl` and `sqc`, shallow unions, and implicit
   intersections on an XY slice; it does not expand lattices or transformations.
+- Geometry sampling is Universe-local. It never combines match counts across
+  Universes and does not expand repeated or nested geometry.
+- Undefined-region candidates are reported only when every parsed Cell in the
+  selected Universe is supported and unambiguous.
+- Same-name duplicate Cells in one selected Universe are all excluded; they are not
+  treated as overlapping geometry.
+- A workload guard rejects excessive combinations of grid points, evaluated Cells,
+  and signed Surface references before grid allocation.
+- The supported surfaces extend indefinitely in z, so changing canonical z values
+  does not currently change classifications.
+- External resolution supports PBED placement files only; `include`, external source,
+  interface, mesh, data-library, and other reference types remain unopened.
+- The PBED reader accepts only strict UTF-8 five-field records. Comments, headers,
+  alternate columns, binary formats, and blank data records are unsupported.
+- PBED placement circles do not expand particle universes or the background universe
+  and do not establish physical packing, valid transport geometry, or 3D non-overlap.
+- Browser upload controls generally preserve only file basenames. A main card that
+  references a subdirectory may require local-project mode unless the upload client
+  supplies matching logical relative names.
+- Canonical path checks detect ordinary symlink and junction escapes where supported
+  by the platform, but cannot eliminate every filesystem time-of-check/time-of-use
+  race against a concurrently modified local project.
 - It does not replace Serpent's own input validation or geometry plotter.
 - Future AI-generated explanations may be incomplete or incorrect.
 - All findings and suggested changes must be reviewed by a qualified user.

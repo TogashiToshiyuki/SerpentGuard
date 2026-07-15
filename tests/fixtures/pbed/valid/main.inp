@@ -1,0 +1,2 @@
+% Synthetic SerpentGuard fixture; not a production reactor model.
+pbed bed background "placements.dat"

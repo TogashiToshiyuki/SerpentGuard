@@ -38,6 +38,24 @@ excluded-cell reasons are localized in the presentation layer. Surface, Cell, fi
 and user-defined object names remain canonical. Switching language redraws an existing
 geometry result without rerunning the sampler.
 
+The selected Universe, coverage flags, supported/excluded Cell counts, workload
+estimate, match counts, and classifications remain canonical language-neutral values.
+The UI derives conservative complete/incomplete wording from those fields. Localized
+severity or geometry labels are never written back into session-state results.
+
+Prompt 6B applies the same boundary to external references. Canonical
+`ExternalResolutionReport`, PBED placement data, and PBED slice results are stored
+without translated text. Resolution status, sanitized diagnostic messages, table
+headings, authorization wording, bounding-box captions, and placement-visualization
+warnings are localized only when rendered. Language switching neither reopens a local
+file nor reruns PBED parsing.
+
+Matplotlib uses a separate runtime font check. Japanese mode validates required glyphs
+in installed platform fonts and never downloads or bundles font files. If none passes,
+the surrounding Streamlit UI remains Japanese, an actionable warning is shown, and
+plot-internal labels fall back to English. Canonical geometry and PBED results are not
+changed by this presentation fallback.
+
 When adding UI text or a finding rule:
 
 1. Add matching English and Japanese catalog entries.

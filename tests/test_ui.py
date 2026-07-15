@@ -14,9 +14,11 @@ from serpentguard.geometry import (
 from serpentguard.i18n import ENGLISH, JAPANESE
 from serpentguard.models import Finding, SourceLocation
 from serpentguard.parser import parse_text
+from serpentguard.references import UploadedSourceBundle
 from serpentguard.ui import (
     LOCALIZED_FINDING_RULE_IDS,
     available_rule_ids,
+    external_reference_table_rows,
     filter_findings,
     findings_table_rows,
     geometry_excluded_cell_rows,
@@ -24,6 +26,7 @@ from serpentguard.ui import (
     localized_finding_message,
     localized_finding_title,
     localized_findings_table_rows,
+    localized_reference_diagnostic_message,
     parsed_model_debug_payload,
     severity_counts,
     severity_display_label,
@@ -199,6 +202,56 @@ def test_parsed_model_debug_payload_omits_raw_card_text() -> None:
     assert "surf secret_surface cyl 0 0 1" not in serialized
 
 
+def test_external_reference_rows_are_bilingual_and_keep_canonical_report() -> None:
+    bundle = UploadedSourceBundle(
+        main_name="main.inp",
+        main_content=b'pbed bed bg "data.dat"\n',
+        supporting_files=[("data.dat", b"0 0 0 1 pebble\n")],
+    )
+    report = bundle.resolve_pbed()
+    original = report.model_dump(mode="json")
+
+    english = external_reference_table_rows(report, ENGLISH)
+    japanese = external_reference_table_rows(report, JAPANESE)
+
+    assert english == [
+        {
+            "Source file": "main.inp",
+            "Reference type": "PBED",
+            "Relative target": "data.dat",
+            "Resolution status": "Resolved",
+            "File size (bytes)": "15",
+            "Record count": "1",
+        }
+    ]
+    assert list(japanese[0]) == [
+        "参照元ファイル",
+        "参照形式",
+        "相対参照先",
+        "解決状態",
+        "ファイルサイズ（byte）",
+        "レコード数",
+    ]
+    assert japanese[0]["解決状態"] == "解決済み"
+    assert report.model_dump(mode="json") == original
+
+
+def test_reference_diagnostic_message_is_localized_without_raw_path() -> None:
+    report = UploadedSourceBundle(
+        main_name="main.inp",
+        main_content=b'pbed bed bg "missing.dat"\n',
+        supporting_files=[],
+    ).resolve_pbed()
+    diagnostic = report.references[0].diagnostics[0]
+
+    assert localized_reference_diagnostic_message(diagnostic, ENGLISH) == (
+        "The referenced PBED file is not present in the allowed set."
+    )
+    assert localized_reference_diagnostic_message(diagnostic, JAPANESE) == (
+        "参照されたPBEDファイルが許可されたファイル集合にありません。"
+    )
+
+
 def test_geometry_presentation_rows_are_bilingual_and_structured() -> None:
     point = RepresentativePoint(
         x=0.125,
@@ -238,6 +291,21 @@ def test_geometry_presentation_rows_are_bilingual_and_structured() -> None:
     assert japanese_row["ファイル"] == "model.inp"
     assert "Surface「plane」" in japanese_row["除外理由"]
     assert "px" in japanese_row["除外理由"]
+
+    duplicate = ExcludedCell(
+        name="repeated",
+        location=SourceLocation(
+            file_name="model.inp",
+            line_start=9,
+            line_end=9,
+        ),
+        reasons=(GeometryExclusion(code="duplicate_cell_name", duplicate_count=2),),
+        universe="0",
+    )
+    english_duplicate = geometry_excluded_cell_rows([duplicate], ENGLISH)[0]
+    japanese_duplicate = geometry_excluded_cell_rows([duplicate], JAPANESE)[0]
+    assert "Cell name 'repeated' has 2 definitions" in english_duplicate["Reason"]
+    assert "Cell名「repeated」が2回定義" in japanese_duplicate["除外理由"]
 
 
 def test_localized_rule_set_matches_current_analyzer_rules() -> None:

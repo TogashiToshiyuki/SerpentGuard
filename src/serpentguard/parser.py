@@ -320,7 +320,24 @@ def _parse_material(
         for line_index in span.meaningful_indices
     ]
     header_tokens = line_tokens[0]
-    if len(header_tokens) != 3:
+    rgb: tuple[int, int, int] | None = None
+    if len(header_tokens) == 7 and header_tokens[3].lower() == "rgb":
+        rgb_values = _parse_rgb_channels(header_tokens[4:])
+        if rgb_values is None:
+            _retain_malformed(
+                span,
+                source,
+                result,
+                code="PARSER003",
+                message=(
+                    "A supported mat rgb option requires three integer channels "
+                    "between 0 and 255."
+                ),
+                diagnostic_line_index=span.start_index,
+            )
+            return
+        rgb = rgb_values
+    elif len(header_tokens) != 3:
         if len(header_tokens) > 3:
             _retain_unknown(span, source, result)
         else:
@@ -402,6 +419,7 @@ def _parse_material(
         Material(
             name=header_tokens[1],
             density=density,
+            rgb=rgb,
             composition=composition,
             location=_span_location(span, source),
             raw_text=span.raw_text,
@@ -437,6 +455,16 @@ def _parse_finite_numbers(tokens: list[str]) -> list[float] | None:
     if not all(math.isfinite(value) for value in values):
         return None
     return values
+
+
+def _parse_rgb_channels(tokens: list[str]) -> tuple[int, int, int] | None:
+    """Parse the documented integer RGB triplet without accepting float aliases."""
+    if len(tokens) != 3 or any(re.fullmatch(r"\d+", token) is None for token in tokens):
+        return None
+    values = tuple(int(token) for token in tokens)
+    if any(value > 255 for value in values):
+        return None
+    return values  # type: ignore[return-value]
 
 
 def _retain_malformed(

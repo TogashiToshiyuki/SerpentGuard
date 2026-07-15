@@ -11,17 +11,28 @@ from serpentguard.analysis import analyze_model, has_unrecoverable_parse_failure
 from serpentguard.geometry import (
     DEFAULT_BOUNDARY_TOLERANCE,
     DEFAULT_GRID_RESOLUTION,
+    DEFAULT_MAX_GEOMETRY_WORKLOAD,
     MAX_GRID_RESOLUTION,
     MIN_GRID_RESOLUTION,
     GeometryConfigError,
     GeometrySamplingConfig,
     GeometrySamplingResult,
+    GeometryWorkloadError,
     PointClassification,
+    available_universes,
+    default_target_universe,
     sample_geometry,
 )
-from serpentguard.geometry_plot import create_geometry_figure
+from serpentguard.geometry_plot import (
+    close_figure,
+    create_diagnostic_figure,
+    create_geometry_view_figure,
+    select_plot_font,
+)
 from serpentguard.i18n import (
     DEFAULT_LANGUAGE,
+    ENGLISH,
+    JAPANESE,
     LANGUAGE_SESSION_KEY,
     SUPPORTED_LANGUAGES,
     SupportedLanguage,
@@ -30,15 +41,29 @@ from serpentguard.i18n import (
 )
 from serpentguard.models import AnalysisReport, ParsedModel
 from serpentguard.parser import parse_bytes
+from serpentguard.pbed_plot import (
+    PbedSliceResult,
+    create_pbed_slice_figure,
+    project_pbed_centers,
+    slice_pbed_placements,
+)
+from serpentguard.references import (
+    ExternalResolutionReport,
+    LocalProjectSource,
+    ReferencePolicyError,
+    UploadedSourceBundle,
+)
 from serpentguard.ui import (
     SEVERITY_ORDER,
     available_rule_ids,
+    external_reference_table_rows,
     filter_findings,
     geometry_excluded_cell_rows,
     geometry_representative_rows,
     localized_finding_title,
     localized_findings_table_rows,
     localized_object_label,
+    localized_reference_diagnostic_message,
     parsed_model_debug_payload,
     severity_counts,
     severity_display_label,
@@ -46,15 +71,258 @@ from serpentguard.ui import (
 
 _RESULT_KEY = "serpentguard_analysis_result"
 _GEOMETRY_RESULT_KEY = "serpentguard_geometry_result"
+_REFERENCE_RESULT_KEY = "serpentguard_external_reference_result"
+_LOCAL_PROJECT_KEY = "serpentguard_local_project_source"
+_PBED_SLICE_RESULT_KEY = "serpentguard_pbed_slice_result"
 _SEVERITY_FILTER_KEY = "serpentguard_severity_filter"
 _RULE_FILTER_KEY = "serpentguard_rule_filter"
+_SOURCE_MODE_KEY = "serpentguard_source_mode"
+_PBED_TARGET_KEY = "serpentguard_pbed_target"
+_PBED_Z_KEY = "serpentguard_pbed_slice_z"
+_PBED_MODE_KEY = "serpentguard_pbed_view_mode"
+_MAX_PBED_PLOT_CIRCLES = 20_000
+_GEOMETRY_WIDGET_KEYS = (
+    "serpentguard_geometry_universe",
+    "serpentguard_geometry_z",
+    "serpentguard_geometry_resolution",
+    "serpentguard_geometry_tolerance",
+    "serpentguard_geometry_xmin",
+    "serpentguard_geometry_xmax",
+    "serpentguard_geometry_ymin",
+    "serpentguard_geometry_ymax",
+)
 
 
 def _clear_previous_result() -> None:
     st.session_state.pop(_RESULT_KEY, None)
     st.session_state.pop(_GEOMETRY_RESULT_KEY, None)
+    st.session_state.pop(_REFERENCE_RESULT_KEY, None)
+    st.session_state.pop(_LOCAL_PROJECT_KEY, None)
+    st.session_state.pop(_PBED_SLICE_RESULT_KEY, None)
+    st.session_state.pop(_PBED_TARGET_KEY, None)
+    st.session_state.pop(_PBED_Z_KEY, None)
+    st.session_state.pop(_PBED_MODE_KEY, None)
     st.session_state.pop(_SEVERITY_FILTER_KEY, None)
     st.session_state.pop(_RULE_FILTER_KEY, None)
+    for key in _GEOMETRY_WIDGET_KEYS:
+        st.session_state.pop(key, None)
+
+
+def _render_external_references(
+    language: SupportedLanguage,
+    t: Callable[..., str],
+) -> None:
+    """Render sanitized resolution results and explicit local authorization."""
+    st.markdown(f"### {t('reference.heading')}")
+    st.caption(t("reference.intro"))
+    report = st.session_state.get(_REFERENCE_RESULT_KEY)
+    if not isinstance(report, ExternalResolutionReport):
+        st.info(t("reference.before_run"))
+        return
+
+    if any(item.status == "pending_authorization" for item in report.references):
+        st.info(t("reference.local.pending"))
+        if st.button(t("reference.local.confirm"), type="primary"):
+            local_project = st.session_state.get(_LOCAL_PROJECT_KEY)
+            if isinstance(local_project, LocalProjectSource):
+                with st.spinner(t("reference.local.spinner")):
+                    report = local_project.resolve_pbed(authorize_supporting_files=True)
+                st.session_state[_REFERENCE_RESULT_KEY] = report
+                st.session_state.pop(_PBED_SLICE_RESULT_KEY, None)
+
+    if report.references:
+        st.caption(t("reference.summary", count=len(report.references)))
+        st.dataframe(
+            external_reference_table_rows(report, language),
+            hide_index=True,
+        )
+    else:
+        st.info(t("reference.none"))
+
+    if report.unused_supporting_files:
+        with st.expander(
+            t("reference.unused", count=len(report.unused_supporting_files))
+        ):
+            for logical_name in report.unused_supporting_files:
+                st.write(logical_name)
+
+    diagnostics = list(report.diagnostics)
+    diagnostics.extend(
+        diagnostic
+        for resolved in report.references
+        for diagnostic in resolved.diagnostics
+    )
+    for diagnostic in diagnostics:
+        location = diagnostic.source_name
+        if diagnostic.line is not None:
+            location = f"{location}:{diagnostic.line}"
+        if diagnostic.record_number is not None:
+            location = f"{location} (record {diagnostic.record_number})"
+        label = t(
+            "reference.diagnostic.label",
+            rule_id=diagnostic.rule_id,
+            code=diagnostic.code,
+            location=location,
+        )
+        display = t(
+            "reference.diagnostic.display",
+            label=label,
+            message=localized_reference_diagnostic_message(diagnostic, language),
+        )
+        if diagnostic.severity == "ERROR":
+            st.error(display)
+        elif diagnostic.severity == "WARNING":
+            st.warning(display)
+        else:
+            st.info(display)
+
+    _render_pbed_visualization(report, language, t)
+
+
+def _render_pbed_visualization(
+    report: ExternalResolutionReport,
+    language: SupportedLanguage,
+    t: Callable[..., str],
+) -> None:
+    """Render verified placement summaries and an explicit sphere cross-section."""
+    candidates = [
+        resolved
+        for resolved in report.references
+        if resolved.pbed_data is not None and resolved.pbed_data.valid_record_count > 0
+    ]
+    if not candidates:
+        return
+
+    st.markdown(f"#### {t('pbed.heading')}")
+    st.warning(t("pbed.slice.warning"))
+    option_ids = [
+        f"{item.reference.source_line}:{item.reference.target_name}"
+        for item in candidates
+    ]
+    stored_target = st.session_state.get(_PBED_TARGET_KEY)
+    if stored_target not in option_ids:
+        st.session_state.pop(_PBED_TARGET_KEY, None)
+    selected_id = st.selectbox(
+        t("pbed.slice.target"),
+        options=option_ids,
+        format_func=lambda item_id: (
+            candidates[option_ids.index(item_id)].reference.target_name
+        ),
+        key=_PBED_TARGET_KEY,
+    )
+    selected = candidates[option_ids.index(selected_id)]
+    data = selected.pbed_data
+    if data is None:  # pragma: no cover - candidates invariant
+        return
+
+    st.caption(
+        t(
+            "pbed.summary",
+            valid=data.valid_record_count,
+            invalid=data.invalid_record_count,
+        )
+    )
+    bounds = data.bounding_box
+    if bounds is None:
+        st.info(t("pbed.no_bounding_box"))
+    else:
+        st.caption(
+            t(
+                "pbed.bounding_box",
+                xmin=f"{bounds.xmin:.8g}",
+                xmax=f"{bounds.xmax:.8g}",
+                ymin=f"{bounds.ymin:.8g}",
+                ymax=f"{bounds.ymax:.8g}",
+                zmin=f"{bounds.zmin:.8g}",
+                zmax=f"{bounds.zmax:.8g}",
+            )
+        )
+
+    mode = st.radio(
+        t("pbed.view.mode"),
+        options=("slice", "projection"),
+        format_func=lambda value: t(f"pbed.view.{value}"),
+        horizontal=True,
+        key=_PBED_MODE_KEY,
+    )
+    with st.form("serpentguard_pbed_slice_form"):
+        z_value = st.number_input(
+            t("pbed.slice.z"),
+            value=0.0,
+            format="%.8g",
+            key=_PBED_Z_KEY,
+            disabled=mode == "projection",
+        )
+        render_requested = st.form_submit_button(t(f"pbed.{mode}.run"))
+
+    if render_requested:
+        slice_result = (
+            slice_pbed_placements(data, z=float(z_value))
+            if mode == "slice"
+            else project_pbed_centers(data)
+        )
+        st.session_state[_PBED_SLICE_RESULT_KEY] = {
+            "target_id": selected_id,
+            "mode": mode,
+            "result": slice_result,
+        }
+
+    stored_slice = st.session_state.get(_PBED_SLICE_RESULT_KEY)
+    if (
+        not isinstance(stored_slice, dict)
+        or stored_slice.get("target_id") != selected_id
+        or stored_slice.get("mode") != mode
+    ):
+        return
+    slice_result = stored_slice.get("result")
+    if not isinstance(slice_result, PbedSliceResult):
+        return
+
+    if slice_result.mode == "slice":
+        st.caption(
+            t(
+                "pbed.slice.summary",
+                intersecting=slice_result.intersecting_placement_count,
+                total=slice_result.total_placement_count,
+                z=f"{slice_result.z:.8g}",
+            )
+        )
+    else:
+        st.caption(
+            t("pbed.projection.summary", total=slice_result.total_placement_count)
+        )
+    if not slice_result.circles:
+        st.info(t("pbed.slice.none"))
+        return
+    if len(slice_result.circles) > _MAX_PBED_PLOT_CIRCLES:
+        st.warning(
+            t(
+                "pbed.slice.limit",
+                count=len(slice_result.circles),
+                limit=_MAX_PBED_PLOT_CIRCLES,
+            )
+        )
+        return
+    pbed_font = select_plot_font(language)
+    pbed_plot_language = language
+    if language == JAPANESE and not pbed_font.supports_japanese:
+        st.warning(t("geometry.font.warning"))
+        pbed_plot_language = ENGLISH
+        pbed_font = select_plot_font(ENGLISH)
+    pbed_t = partial(translate, language=pbed_plot_language)
+    title = (
+        pbed_t("pbed.slice.title", z=f"{slice_result.z:.8g}")
+        if slice_result.mode == "slice"
+        else pbed_t("pbed.projection.title")
+    )
+    figure = create_pbed_slice_figure(
+        slice_result,
+        title=title,
+        font=pbed_font,
+        universe_label=pbed_t("pbed.universe"),
+    )
+    st.pyplot(figure, use_container_width=True)
+    close_figure(figure)
 
 
 def _render_geometry_sampler(
@@ -63,7 +331,20 @@ def _render_geometry_sampler(
     t: Callable[..., str],
 ) -> None:
     """Render the explicit geometry form and any canonical sampling result."""
+    universes = available_universes(parsed)
+    default_universe = default_target_universe(parsed)
+    if not universes or default_universe is None:
+        st.error(t("geometry.no_universes"))
+        return
+
+    stored_universe = st.session_state.get("serpentguard_geometry_universe")
+    if stored_universe not in universes:
+        st.session_state.pop("serpentguard_geometry_universe", None)
+
     st.info(t("geometry.intro"))
+    st.caption(t("geometry.local_coordinates"))
+    if "0" not in universes:
+        st.info(t("geometry.universe.defaulted", universe=default_universe))
     st.warning(
         "\n".join(
             (
@@ -75,11 +356,19 @@ def _render_geometry_sampler(
     )
 
     with st.form("serpentguard_geometry_form"):
+        target_universe = st.selectbox(
+            t("geometry.form.universe"),
+            options=universes,
+            index=universes.index(default_universe),
+            key="serpentguard_geometry_universe",
+        )
         slice_columns = st.columns(3)
         z_value = slice_columns[0].number_input(
             t("geometry.form.z"),
             value=0.0,
             format="%.6f",
+            disabled=True,
+            help=t("geometry.form.z_help"),
             key="serpentguard_geometry_z",
         )
         resolution = slice_columns[1].number_input(
@@ -126,6 +415,13 @@ def _render_geometry_sampler(
             format="%.6f",
             key="serpentguard_geometry_ymax",
         )
+        st.caption(t("geometry.form.z_help"))
+        st.caption(
+            t(
+                "geometry.workload.help",
+                limit=f"{DEFAULT_MAX_GEOMETRY_WORKLOAD:,}",
+            )
+        )
         sample_requested = st.form_submit_button(
             t("geometry.form.submit"),
             type="primary",
@@ -140,13 +436,27 @@ def _render_geometry_sampler(
                 ymax=float(ymax),
                 z=float(z_value),
                 resolution=int(resolution),
+                target_universe=target_universe,
                 boundary_tolerance=float(boundary_tolerance),
+            )
+            with st.spinner(t("geometry.spinner")):
+                geometry_result = sample_geometry(parsed, config)
+        except GeometryWorkloadError as error:
+            estimate = error.estimate
+            st.error(
+                t(
+                    "geometry.workload_error",
+                    operations=f"{estimate.estimated_operations:,}",
+                    limit=f"{error.limit:,}",
+                    points=f"{estimate.grid_point_count:,}",
+                    cells=estimate.evaluated_cell_count,
+                    references=estimate.signed_reference_count,
+                )
             )
         except GeometryConfigError as error:
             st.error(t("geometry.config_error", message=error))
         else:
-            with st.spinner(t("geometry.spinner")):
-                st.session_state[_GEOMETRY_RESULT_KEY] = sample_geometry(parsed, config)
+            st.session_state[_GEOMETRY_RESULT_KEY] = geometry_result
 
     geometry_result = st.session_state.get(_GEOMETRY_RESULT_KEY)
     if not isinstance(geometry_result, GeometrySamplingResult):
@@ -155,7 +465,14 @@ def _render_geometry_sampler(
     config = geometry_result.config
     st.caption(
         t(
+            "geometry.universe.selected",
+            universe=geometry_result.selected_universe,
+        )
+    )
+    st.caption(
+        t(
             "geometry.summary",
+            universe=geometry_result.selected_universe,
             xmin=f"{config.xmin:.8g}",
             xmax=f"{config.xmax:.8g}",
             ymin=f"{config.ymin:.8g}",
@@ -169,69 +486,195 @@ def _render_geometry_sampler(
     st.caption(
         t(
             "geometry.cells",
-            included=len(geometry_result.included_cells),
-            excluded=len(geometry_result.excluded_cells),
+            included=geometry_result.supported_cell_count,
+            excluded=geometry_result.excluded_cell_count,
+            references=geometry_result.signed_reference_count,
+            workload=f"{geometry_result.workload.estimated_operations:,}",
         )
     )
+    if geometry_result.coverage_complete:
+        st.success(t("geometry.coverage.complete"))
+    else:
+        st.warning(
+            t(
+                "geometry.coverage.incomplete",
+                excluded=geometry_result.excluded_cell_count,
+            )
+        )
+        st.warning(
+            t(
+                "geometry.undefined.disabled",
+                count=geometry_result.incomplete_domain_count,
+            )
+        )
+        if any(
+            reason.code == "duplicate_cell_name"
+            for cell in geometry_result.excluded_cells
+            for reason in cell.reasons
+        ):
+            st.warning(t("geometry.duplicate.warning"))
     if not geometry_result.included_cells:
         st.warning(t("geometry.no_included_cells"))
 
-    metric_columns = st.columns(4)
-    metric_columns[0].metric(
-        t("geometry.metric.overlap"), geometry_result.overlap_count
+    overlap_metric_key = (
+        "geometry.metric.overlap"
+        if geometry_result.coverage_complete
+        else "geometry.metric.overlap_incomplete"
     )
+    normal_metric_key = (
+        "geometry.metric.normal"
+        if geometry_result.coverage_complete
+        else "geometry.metric.normal_incomplete"
+    )
+    metric_columns = st.columns(4)
+    metric_columns[0].metric(t(overlap_metric_key), geometry_result.overlap_count)
     metric_columns[1].metric(
         t("geometry.metric.undefined"), geometry_result.undefined_count
     )
-    metric_columns[2].metric(t("geometry.metric.normal"), geometry_result.normal_count)
+    metric_columns[2].metric(t(normal_metric_key), geometry_result.normal_count)
     metric_columns[3].metric(
         t("geometry.metric.indeterminate"), geometry_result.indeterminate_count
     )
 
-    classification_labels = {
-        PointClassification.UNDEFINED: t("geometry.classification.undefined"),
-        PointClassification.NORMAL: t("geometry.classification.normal"),
-        PointClassification.OVERLAP: t("geometry.classification.overlap"),
-        PointClassification.INDETERMINATE: t("geometry.classification.indeterminate"),
-    }
-    figure = create_geometry_figure(
-        geometry_result,
-        title=t("geometry.plot.title", z=f"{config.z:.8g}"),
-        classification_labels=classification_labels,
+    undefined_key = (
+        "geometry.classification.undefined"
+        if geometry_result.undefined_detection_enabled
+        else "geometry.classification.undefined_disabled"
     )
-    st.pyplot(figure, use_container_width=True)
-    figure.clear()
+    plot_font = select_plot_font(language)
+    plot_language = language
+    if language == JAPANESE and not plot_font.supports_japanese:
+        st.warning(t("geometry.font.warning"))
+        plot_language = ENGLISH
+        plot_font = select_plot_font(ENGLISH)
+    plot_t = partial(translate, language=plot_language)
 
-    representative_columns = st.columns(2)
-    representative_sets = (
-        (
-            representative_columns[0],
-            "geometry.representatives.overlap",
-            geometry_result.overlap_representatives,
-        ),
-        (
-            representative_columns[1],
-            "geometry.representatives.undefined",
-            geometry_result.undefined_representatives,
-        ),
+    geometry_tab, diagnostic_tab = st.tabs(
+        [t("geometry.view.geometry"), t("geometry.view.diagnostic")]
     )
-    for column, heading_key, points in representative_sets:
-        column.markdown(f"#### {t(heading_key)}")
-        rows = geometry_representative_rows(points, language)
-        if rows:
-            column.dataframe(rows, hide_index=True)
+    with geometry_tab:
+        color_by = st.radio(
+            t("geometry.color_by.label"),
+            options=("material", "cell"),
+            format_func=lambda value: t(f"geometry.color_by.{value}"),
+            horizontal=True,
+            key="serpentguard_geometry_color_by",
+        )
+        has_serpent_rgb = any(
+            category.serpent_rgb is not None
+            for category in geometry_result.material_categories
+        )
+        use_serpent_rgb = False
+        if color_by == "material" and has_serpent_rgb:
+            use_serpent_rgb = st.checkbox(
+                t("geometry.color.serpent_rgb"),
+                key="serpentguard_geometry_use_serpent_rgb",
+            )
+        if not use_serpent_rgb:
+            st.caption(t("geometry.color.application_note"))
+        geometry_figure = create_geometry_view_figure(
+            geometry_result,
+            color_by=color_by,
+            title=plot_t(
+                "geometry.plot.geometry_title",
+                universe=geometry_result.selected_universe,
+            ),
+            special_labels={
+                "outside": plot_t("geometry.category.outside"),
+                "void": plot_t("geometry.category.void"),
+                "unsupported": plot_t("geometry.category.unsupported"),
+                "indeterminate": plot_t("geometry.category.indeterminate"),
+                "undefined": plot_t("geometry.category.undefined"),
+            },
+            use_serpent_rgb=use_serpent_rgb,
+            font=plot_font,
+        )
+        st.pyplot(geometry_figure, use_container_width=True)
+        close_figure(geometry_figure)
+
+    with diagnostic_tab:
+        st.caption(t("geometry.diagnostic.caption"))
+        diagnostic_figure = create_diagnostic_figure(
+            geometry_result,
+            title=plot_t(
+                "geometry.plot.diagnostic_title",
+                universe=geometry_result.selected_universe,
+            ),
+            classification_labels={
+                classification: plot_t_key
+                for classification, plot_t_key in (
+                    (PointClassification.UNDEFINED, plot_t(undefined_key)),
+                    (
+                        PointClassification.NORMAL,
+                        plot_t("geometry.classification.normal"),
+                    ),
+                    (
+                        PointClassification.OVERLAP,
+                        plot_t(
+                            "geometry.classification.overlap"
+                            if geometry_result.coverage_complete
+                            else "geometry.classification.overlap_incomplete"
+                        ),
+                    ),
+                    (
+                        PointClassification.INCOMPLETE,
+                        plot_t("geometry.classification.incomplete"),
+                    ),
+                    (
+                        PointClassification.BOUNDARY,
+                        plot_t("geometry.classification.boundary"),
+                    ),
+                )
+            },
+            font=plot_font,
+        )
+        st.pyplot(diagnostic_figure, use_container_width=True)
+        close_figure(diagnostic_figure)
+
+        representative_columns = st.columns(2)
+        representative_sets = (
+            (
+                representative_columns[0],
+                (
+                    "geometry.representatives.overlap"
+                    if geometry_result.coverage_complete
+                    else "geometry.representatives.overlap_incomplete"
+                ),
+                geometry_result.overlap_representatives,
+            ),
+            (
+                representative_columns[1],
+                "geometry.representatives.undefined",
+                geometry_result.undefined_representatives,
+            ),
+        )
+        for column, heading_key, points in representative_sets:
+            column.markdown(f"#### {t(heading_key)}")
+            rows = geometry_representative_rows(points, language)
+            if rows:
+                column.dataframe(rows, hide_index=True)
+            elif (
+                heading_key == "geometry.representatives.undefined"
+                and not geometry_result.undefined_detection_enabled
+            ):
+                column.info(
+                    t(
+                        "geometry.undefined.disabled",
+                        count=geometry_result.incomplete_domain_count,
+                    )
+                )
+            else:
+                column.info(t("geometry.representatives.none"))
+
+        st.markdown(f"#### {t('geometry.excluded.heading')}")
+        excluded_rows = geometry_excluded_cell_rows(
+            geometry_result.excluded_cells,
+            language,
+        )
+        if excluded_rows:
+            st.dataframe(excluded_rows, hide_index=True)
         else:
-            column.info(t("geometry.representatives.none"))
-
-    st.markdown(f"#### {t('geometry.excluded.heading')}")
-    excluded_rows = geometry_excluded_cell_rows(
-        geometry_result.excluded_cells,
-        language,
-    )
-    if excluded_rows:
-        st.dataframe(excluded_rows, hide_index=True)
-    else:
-        st.success(t("geometry.excluded.none"))
+            st.success(t("geometry.excluded.none"))
 
 
 stored_language = st.session_state.get(LANGUAGE_SESSION_KEY, DEFAULT_LANGUAGE)
@@ -257,20 +700,47 @@ st.warning(t("app.warning"))
 st.info(t("app.local_notice"))
 
 st.subheader(t("section.upload"))
-main_input = st.file_uploader(
-    t("upload.main.label"),
-    help=t("upload.main.help"),
-    key="serpentguard_main_input",
+source_mode = st.radio(
+    t("source.mode.label"),
+    options=("uploaded_bundle", "local_project"),
+    format_func=lambda mode: t(f"source.mode.{mode}"),
+    horizontal=True,
+    key=_SOURCE_MODE_KEY,
     on_change=_clear_previous_result,
 )
-supporting_files = st.file_uploader(
-    t("upload.supporting.label"),
-    accept_multiple_files=True,
-    help=t("upload.supporting.help"),
-    key="serpentguard_supporting_inputs",
-)
-if supporting_files:
-    st.caption(t("upload.supporting.caption", count=len(supporting_files)))
+main_input = None
+supporting_files = []
+local_main_path = ""
+local_root_path = ""
+if source_mode == "uploaded_bundle":
+    main_input = st.file_uploader(
+        t("upload.main.label"),
+        help=t("upload.main.help"),
+        key="serpentguard_main_input",
+        on_change=_clear_previous_result,
+    )
+    supporting_files = st.file_uploader(
+        t("upload.supporting.label"),
+        accept_multiple_files=True,
+        help=t("upload.supporting.help"),
+        key="serpentguard_supporting_inputs",
+        on_change=_clear_previous_result,
+    )
+    if supporting_files:
+        st.caption(t("upload.supporting.caption", count=len(supporting_files)))
+else:
+    local_main_path = st.text_input(
+        t("local.main.label"),
+        help=t("local.main.help"),
+        key="serpentguard_local_main_path",
+        on_change=_clear_previous_result,
+    )
+    local_root_path = st.text_input(
+        t("local.root.label"),
+        help=t("local.root.help"),
+        key="serpentguard_local_root_path",
+        on_change=_clear_previous_result,
+    )
 
 st.subheader(t("section.purpose"))
 analysis_purpose = st.text_area(
@@ -280,20 +750,62 @@ analysis_purpose = st.text_area(
 )
 
 st.subheader(t("section.run"))
+run_disabled = (
+    main_input is None
+    if source_mode == "uploaded_bundle"
+    else not local_main_path.strip() or not local_root_path.strip()
+)
 run_check = st.button(
     t("run.button"),
     type="primary",
-    disabled=main_input is None,
-    help=t("run.help"),
+    disabled=run_disabled,
+    help=t("run.help.upload" if source_mode == "uploaded_bundle" else "run.help.local"),
 )
 
-if run_check and main_input is not None:
-    with st.spinner(t("run.spinner")):
-        parsed = parse_bytes(main_input.getvalue(), file_name=main_input.name)
-        report = analyze_model(parsed)
+if run_check:
+    try:
+        with st.spinner(t("run.spinner")):
+            local_project: LocalProjectSource | None = None
+            if source_mode == "uploaded_bundle" and main_input is not None:
+                bundle = UploadedSourceBundle(
+                    main_name=main_input.name,
+                    main_content=main_input.getvalue(),
+                    supporting_files=[
+                        (support.name, support.getvalue())
+                        for support in supporting_files
+                    ],
+                )
+                main_bytes = bundle.read_main_bytes()
+                file_name = bundle.main.logical_name
+                reference_report = bundle.resolve_pbed()
+            else:
+                local_project = LocalProjectSource(
+                    main_path=local_main_path.strip(),
+                    authorized_root=local_root_path.strip(),
+                )
+                main_bytes = local_project.read_main_bytes()
+                file_name = local_project.main.logical_name
+                reference_report = local_project.preview_pbed()
+
+            parsed = parse_bytes(main_bytes, file_name=file_name)
+            report = analyze_model(parsed)
+    except ReferencePolicyError as error:
+        st.error(
+            t(
+                "reference.local.error",
+                message=t(f"reference.policy.{error.code}"),
+            )
+        )
+    else:
         st.session_state.pop(_GEOMETRY_RESULT_KEY, None)
+        st.session_state.pop(_PBED_SLICE_RESULT_KEY, None)
+        st.session_state[_REFERENCE_RESULT_KEY] = reference_report
+        if local_project is None:
+            st.session_state.pop(_LOCAL_PROJECT_KEY, None)
+        else:
+            st.session_state[_LOCAL_PROJECT_KEY] = local_project
         st.session_state[_RESULT_KEY] = {
-            "file_name": main_input.name,
+            "file_name": file_name,
             "analysis_purpose": analysis_purpose.strip(),
             "parsed": parsed,
             "report": report,
@@ -402,6 +914,8 @@ elif isinstance(result.get("parsed"), ParsedModel) and isinstance(
     with st.expander(t("debug.expander")):
         st.caption(t("debug.caption"))
         st.json(parsed_model_debug_payload(parsed))
+
+_render_external_references(language, t)
 
 st.subheader(t("section.geometry"))
 geometry_parsed = result.get("parsed") if isinstance(result, dict) else None

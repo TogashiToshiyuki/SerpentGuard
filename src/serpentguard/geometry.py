@@ -1,12 +1,13 @@
-"""Deliberately limited, deterministic XY geometry sampling.
+"""Deliberately limited, deterministic universe-local XY geometry sampling.
 
 This module is independent of Streamlit and intentionally supports only the
-surface subset documented by SerpentGuard.  It is a sampling aid, not a full
+surface subset documented by SerpentGuard. It is a sampling aid, not a full
 Serpent CSG implementation or a replacement for Serpent's geometry plotter.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import IntEnum
 from math import isfinite
@@ -15,7 +16,13 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from serpentguard.models import Cell, ParsedModel, SourceLocation, Surface
+from serpentguard.models import (
+    Cell,
+    ParsedModel,
+    SourceLocation,
+    Surface,
+    UnknownCard,
+)
 
 SUPPORTED_GEOMETRY_SURFACE_TYPES = frozenset({"cyl", "sqc"})
 DEFAULT_BOUNDARY_TOLERANCE = 1.0e-9
@@ -23,6 +30,7 @@ DEFAULT_GRID_RESOLUTION = 100
 MIN_GRID_RESOLUTION = 2
 MAX_GRID_RESOLUTION = 500
 DEFAULT_MAX_REPRESENTATIVE_POINTS = 10
+DEFAULT_MAX_GEOMETRY_WORKLOAD = 50_000_000
 
 GeometryExclusionCode = Literal[
     "unsupported_surface_type",
@@ -31,11 +39,40 @@ GeometryExclusionCode = Literal[
     "invalid_surface_parameters",
     "unsupported_cell_syntax",
     "empty_region",
+    "duplicate_cell_name",
 ]
 
 
 class GeometryConfigError(ValueError):
     """Raised when a requested sampling configuration is invalid."""
+
+
+class GeometryUniverseError(GeometryConfigError):
+    """Raised when the requested universe has no supported parsed cells."""
+
+    def __init__(self, target_universe: str, available: tuple[str, ...]) -> None:
+        self.target_universe = target_universe
+        self.available_universes = available
+        available_text = ", ".join(available) if available else "none"
+        super().__init__(
+            f"target universe {target_universe!r} is unavailable; "
+            f"available universes: {available_text}"
+        )
+
+
+class GeometryWorkloadError(GeometryConfigError):
+    """Raised before allocation when a sampling request exceeds the workload guard."""
+
+    def __init__(
+        self,
+        estimate: GeometryWorkloadEstimate,
+        limit: int,
+    ) -> None:
+        self.estimate = estimate
+        self.limit = limit
+        super().__init__(
+            f"estimated workload {estimate.estimated_operations} exceeds limit {limit}"
+        )
 
 
 class PointClassification(IntEnum):
@@ -44,12 +81,36 @@ class PointClassification(IntEnum):
     UNDEFINED = 0
     NORMAL = 1
     OVERLAP = 2
-    INDETERMINATE = 3
+    INCOMPLETE = 3
+    BOUNDARY = 4
+    # Backward-compatible alias for callers that treated all uncertainty alike.
+    INDETERMINATE = INCOMPLETE
+
+
+GeometryCategoryKind = Literal[
+    "cell",
+    "material",
+    "outside",
+    "void",
+    "unsupported",
+    "indeterminate",
+    "undefined",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class GeometryCategory:
+    """One language-neutral category referenced by an integer geometry grid."""
+
+    key: str
+    label: str
+    kind: GeometryCategoryKind
+    serpent_rgb: tuple[int, int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class GeometrySamplingConfig:
-    """Validated user-confirmed XY slice and grid configuration."""
+    """Validated user-confirmed universe, XY slice, and grid configuration."""
 
     xmin: float
     xmax: float
@@ -57,8 +118,10 @@ class GeometrySamplingConfig:
     ymax: float
     z: float
     resolution: int
+    target_universe: str
     boundary_tolerance: float = DEFAULT_BOUNDARY_TOLERANCE
     max_representative_points: int = DEFAULT_MAX_REPRESENTATIVE_POINTS
+    max_workload: int = DEFAULT_MAX_GEOMETRY_WORKLOAD
 
     def __post_init__(self) -> None:
         values = {
@@ -83,6 +146,8 @@ class GeometrySamplingConfig:
                 f"resolution must be between {MIN_GRID_RESOLUTION} and "
                 f"{MAX_GRID_RESOLUTION}"
             )
+        if not isinstance(self.target_universe, str) or not self.target_universe:
+            raise GeometryConfigError("target_universe must be a non-empty string")
         if self.boundary_tolerance < 0.0:
             raise GeometryConfigError("boundary_tolerance must not be negative")
         if (
@@ -93,6 +158,22 @@ class GeometrySamplingConfig:
             raise GeometryConfigError(
                 "max_representative_points must be a positive integer"
             )
+        if (
+            isinstance(self.max_workload, bool)
+            or not isinstance(self.max_workload, int)
+            or self.max_workload < 1
+        ):
+            raise GeometryConfigError("max_workload must be a positive integer")
+
+
+@dataclass(frozen=True, slots=True)
+class GeometryWorkloadEstimate:
+    """Conservative operation estimate evaluated before grid allocation."""
+
+    grid_point_count: int
+    evaluated_cell_count: int
+    signed_reference_count: int
+    estimated_operations: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +183,7 @@ class GeometryExclusion:
     code: GeometryExclusionCode
     surface_name: str | None = None
     surface_type: str | None = None
+    duplicate_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +193,7 @@ class ExcludedCell:
     name: str
     location: SourceLocation
     reasons: tuple[GeometryExclusion, ...]
+    universe: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,16 +210,30 @@ class GeometrySamplingResult:
     """Complete language-neutral output from the limited geometry sampler."""
 
     config: GeometrySamplingConfig
+    selected_universe: str
+    coverage_complete: bool
+    undefined_detection_enabled: bool
+    supported_cell_count: int
+    excluded_cell_count: int
+    signed_reference_count: int
+    workload: GeometryWorkloadEstimate
     x_coordinates: NDArray[np.float64]
     y_coordinates: NDArray[np.float64]
     classifications: NDArray[np.uint8]
     match_counts: NDArray[np.int64]
+    cell_category_grid: NDArray[np.int32]
+    material_category_grid: NDArray[np.int32]
+    cell_categories: tuple[GeometryCategory, ...]
+    material_categories: tuple[GeometryCategory, ...]
     included_cells: tuple[str, ...]
     excluded_cells: tuple[ExcludedCell, ...]
     overlap_count: int
     undefined_count: int
     normal_count: int
     indeterminate_count: int
+    incomplete_count: int
+    boundary_indeterminate_count: int
+    incomplete_domain_count: int
     overlap_representatives: tuple[RepresentativePoint, ...]
     undefined_representatives: tuple[RepresentativePoint, ...]
     indeterminate_representatives: tuple[RepresentativePoint, ...]
@@ -158,102 +255,159 @@ class _PreparedCell:
     terms: tuple[tuple[str, ...], ...]
 
 
+def available_universes(model: ParsedModel) -> tuple[str, ...]:
+    """Return deterministic universe choices from supported parsed cells only."""
+    return tuple(sorted({cell.universe for cell in model.cells}))
+
+
+def default_target_universe(model: ParsedModel) -> str | None:
+    """Prefer universe 0, otherwise return the first deterministic choice."""
+    universes = available_universes(model)
+    if "0" in universes:
+        return "0"
+    return universes[0] if universes else None
+
+
 def sample_geometry(
     model: ParsedModel,
     config: GeometrySamplingConfig,
 ) -> GeometrySamplingResult:
-    """Sample supported cells over a user-confirmed, inclusive XY grid.
+    """Sample one universe over a user-confirmed, inclusive XY grid.
 
-    Boundary points are indeterminate.  A cell is evaluated only when every
-    referenced surface has one unambiguous, valid supported definition.
+    Boundary points are indeterminate. A cell is evaluated only when every
+    referenced surface has one unambiguous, valid supported definition. When
+    any selected-universe cell is excluded, zero supported matches are also
+    indeterminate because an excluded cell could occupy that point.
     """
+    universes = available_universes(model)
+    if config.target_universe not in universes:
+        raise GeometryUniverseError(config.target_universe, universes)
+
+    surface_groups = _group_surfaces(model)
+    retained_surfaces = _retained_surface_cards(model)
+    prepared_cells, excluded_cells = _prepare_cells(
+        model,
+        config.target_universe,
+        surface_groups,
+        retained_surfaces,
+    )
+    workload = _estimate_workload(config, prepared_cells)
+    if workload.estimated_operations > config.max_workload:
+        raise GeometryWorkloadError(workload, config.max_workload)
+
     x_coordinates = np.linspace(
         config.xmin, config.xmax, config.resolution, dtype=np.float64
     )
     y_coordinates = np.linspace(
         config.ymin, config.ymax, config.resolution, dtype=np.float64
     )
-    x_grid, y_grid = np.meshgrid(x_coordinates, y_coordinates)
+    x_values = x_coordinates[np.newaxis, :]
+    y_values = y_coordinates[:, np.newaxis]
+    shape = (config.resolution, config.resolution)
 
-    surface_groups = _group_surfaces(model)
-    retained_surfaces = _retained_surface_cards(model)
-    prepared_cells, excluded_cells = _prepare_cells(
-        model, surface_groups, retained_surfaces
-    )
-
-    surface_values: dict[str, NDArray[np.float64]] = {}
-    for prepared in prepared_cells:
-        for signed_reference in prepared.cell.signed_surface_references:
-            surface_name = _unsigned_reference(signed_reference)
-            if surface_name not in surface_values:
-                surface_values[surface_name] = _signed_distance(
-                    surface_groups[surface_name][0], x_grid, y_grid
-                )
-
-    cell_names: list[str] = []
-    cell_match_masks: list[NDArray[np.bool_]] = []
-    cell_indeterminate_masks: list[NDArray[np.bool_]] = []
-    for prepared in prepared_cells:
+    surfaces = {
+        surface_name: definitions[0]
+        for surface_name, definitions in surface_groups.items()
+        if len(definitions) == 1
+    }
+    match_counts = np.zeros(shape, dtype=np.int64)
+    unique_match_indices = np.full(shape, -1, dtype=np.int32)
+    any_indeterminate = np.zeros(shape, dtype=np.bool_)
+    for prepared_index, prepared in enumerate(prepared_cells):
         match_mask, indeterminate_mask = _evaluate_cell(
             prepared,
-            surface_values,
+            surfaces,
+            x_values,
+            y_values,
             config.boundary_tolerance,
+            shape,
         )
-        cell_names.append(prepared.cell.name)
-        cell_match_masks.append(match_mask)
-        cell_indeterminate_masks.append(indeterminate_mask)
-
-    shape = x_grid.shape
-    match_counts = np.zeros(shape, dtype=np.int64)
-    any_indeterminate = np.zeros(shape, dtype=np.bool_)
-    for match_mask, indeterminate_mask in zip(
-        cell_match_masks, cell_indeterminate_masks, strict=True
-    ):
+        first_match = match_mask & (match_counts == 0)
+        repeated_match = match_mask & (match_counts > 0)
+        unique_match_indices[first_match] = prepared_index
+        unique_match_indices[repeated_match] = -1
         match_counts += match_mask
         any_indeterminate |= indeterminate_mask
 
-    classifications = np.full(shape, PointClassification.INDETERMINATE, dtype=np.uint8)
-    if prepared_cells:
-        overlap_mask = match_counts >= 2
-        indeterminate_mask = (match_counts < 2) & any_indeterminate
-        determinate_mask = ~overlap_mask & ~indeterminate_mask
-        classifications[overlap_mask] = PointClassification.OVERLAP
-        classifications[determinate_mask & (match_counts == 0)] = (
-            PointClassification.UNDEFINED
-        )
-        classifications[determinate_mask & (match_counts == 1)] = (
-            PointClassification.NORMAL
-        )
+    coverage_complete = not excluded_cells
+    classifications = np.full(shape, PointClassification.INCOMPLETE, dtype=np.uint8)
+    overlap_mask = match_counts >= 2
+    boundary_indeterminate_mask = (match_counts < 2) & any_indeterminate
+    certain_mask = ~overlap_mask & ~boundary_indeterminate_mask
+    single_match_mask = certain_mask & (match_counts == 1)
+    zero_match_mask = certain_mask & (match_counts == 0)
 
+    classifications[overlap_mask] = PointClassification.OVERLAP
+    classifications[boundary_indeterminate_mask] = PointClassification.BOUNDARY
+    if coverage_complete:
+        classifications[single_match_mask] = PointClassification.NORMAL
+        classifications[zero_match_mask] = PointClassification.UNDEFINED
+
+    incomplete_domain_count = (
+        int(np.count_nonzero(zero_match_mask)) if not coverage_complete else 0
+    )
     overlap_count = _classification_count(classifications, PointClassification.OVERLAP)
     undefined_count = _classification_count(
         classifications, PointClassification.UNDEFINED
     )
     normal_count = _classification_count(classifications, PointClassification.NORMAL)
-    indeterminate_count = _classification_count(
-        classifications, PointClassification.INDETERMINATE
+    incomplete_count = _classification_count(
+        classifications, PointClassification.INCOMPLETE
+    )
+    boundary_indeterminate_count = _classification_count(
+        classifications, PointClassification.BOUNDARY
+    )
+    indeterminate_count = incomplete_count + boundary_indeterminate_count
+    cell_category_grid, cell_categories = _build_geometry_categories(
+        model,
+        prepared_cells,
+        unique_match_indices,
+        classifications,
+        color_by="cell",
+    )
+    material_category_grid, material_categories = _build_geometry_categories(
+        model,
+        prepared_cells,
+        unique_match_indices,
+        classifications,
+        color_by="material",
     )
 
     representative_args = (
         classifications,
         x_coordinates,
         y_coordinates,
-        cell_names,
-        cell_match_masks,
+        prepared_cells,
+        surfaces,
+        config.boundary_tolerance,
         config.max_representative_points,
     )
     return GeometrySamplingResult(
         config=config,
+        selected_universe=config.target_universe,
+        coverage_complete=coverage_complete,
+        undefined_detection_enabled=coverage_complete,
+        supported_cell_count=len(prepared_cells),
+        excluded_cell_count=len(excluded_cells),
+        signed_reference_count=workload.signed_reference_count,
+        workload=workload,
         x_coordinates=x_coordinates,
         y_coordinates=y_coordinates,
         classifications=classifications,
         match_counts=match_counts,
-        included_cells=tuple(cell_names),
+        cell_category_grid=cell_category_grid,
+        material_category_grid=material_category_grid,
+        cell_categories=cell_categories,
+        material_categories=material_categories,
+        included_cells=tuple(prepared.cell.name for prepared in prepared_cells),
         excluded_cells=tuple(excluded_cells),
         overlap_count=overlap_count,
         undefined_count=undefined_count,
         normal_count=normal_count,
         indeterminate_count=indeterminate_count,
+        incomplete_count=incomplete_count,
+        boundary_indeterminate_count=boundary_indeterminate_count,
+        incomplete_domain_count=incomplete_domain_count,
         overlap_representatives=_representatives(
             PointClassification.OVERLAP, *representative_args
         ),
@@ -261,9 +415,90 @@ def sample_geometry(
             PointClassification.UNDEFINED, *representative_args
         ),
         indeterminate_representatives=_representatives(
-            PointClassification.INDETERMINATE, *representative_args
+            PointClassification.INCOMPLETE, *representative_args
         ),
     )
+
+
+def _build_geometry_categories(
+    model: ParsedModel,
+    prepared_cells: list[_PreparedCell],
+    unique_match_indices: NDArray[np.int32],
+    classifications: NDArray[np.uint8],
+    *,
+    color_by: Literal["cell", "material"],
+) -> tuple[NDArray[np.int32], tuple[GeometryCategory, ...]]:
+    """Build compact categorical occupancy without storing strings per point."""
+    grid = np.full(classifications.shape, -1, dtype=np.int32)
+    categories: list[GeometryCategory] = []
+    category_indices: dict[str, int] = {}
+    material_groups: dict[str, list[tuple[int, int, int] | None]] = {}
+    for material in model.materials:
+        material_groups.setdefault(material.name, []).append(material.rgb)
+
+    def add(category: GeometryCategory) -> int:
+        existing = category_indices.get(category.key)
+        if existing is not None:
+            return existing
+        index = len(categories)
+        categories.append(category)
+        category_indices[category.key] = index
+        return index
+
+    normal_mask = classifications == PointClassification.NORMAL
+    for prepared_index, prepared in enumerate(prepared_cells):
+        cell = prepared.cell
+        cell_mask = normal_mask & (unique_match_indices == prepared_index)
+        if not np.any(cell_mask):
+            continue
+        if color_by == "cell":
+            kind: GeometryCategoryKind = (
+                cell.fill_type if cell.fill_type in {"void", "outside"} else "cell"
+            )
+            category = GeometryCategory(
+                key=f"cell:{cell.name}", label=cell.name, kind=kind
+            )
+        elif cell.fill_type in {"void", "outside"}:
+            category = GeometryCategory(
+                key=f"special:{cell.fill_type}",
+                label=cell.fill_type,
+                kind=cell.fill_type,
+            )
+        else:
+            material_name = cell.material or ""
+            definitions = material_groups.get(material_name, [])
+            rgb = definitions[0] if len(definitions) == 1 else None
+            category = GeometryCategory(
+                key=f"material:{material_name}",
+                label=material_name,
+                kind="material",
+                serpent_rgb=rgb,
+            )
+        grid[cell_mask] = add(category)
+
+    special_states: tuple[tuple[PointClassification, GeometryCategory], ...] = (
+        (
+            PointClassification.OVERLAP,
+            GeometryCategory("special:indeterminate", "indeterminate", "indeterminate"),
+        ),
+        (
+            PointClassification.BOUNDARY,
+            GeometryCategory("special:indeterminate", "indeterminate", "indeterminate"),
+        ),
+        (
+            PointClassification.INCOMPLETE,
+            GeometryCategory("special:unsupported", "unsupported", "unsupported"),
+        ),
+        (
+            PointClassification.UNDEFINED,
+            GeometryCategory("special:undefined", "undefined", "undefined"),
+        ),
+    )
+    for classification, category in special_states:
+        mask = classifications == classification
+        if np.any(mask):
+            grid[mask] = add(category)
+    return grid, tuple(categories)
 
 
 def _group_surfaces(model: ParsedModel) -> dict[str, list[Surface]]:
@@ -286,22 +521,53 @@ def _retained_surface_cards(model: ParsedModel) -> dict[str, tuple[str | None, .
 
 def _prepare_cells(
     model: ParsedModel,
+    target_universe: str,
     surface_groups: dict[str, list[Surface]],
     retained_surfaces: dict[str, tuple[str | None, ...]],
 ) -> tuple[list[_PreparedCell], list[ExcludedCell]]:
+    selected_cells = [cell for cell in model.cells if cell.universe == target_universe]
+    selected_unknown_cells = [
+        card
+        for card in model.unknown_cards
+        if card.keyword.lower() == "cell"
+        and _unknown_cell_universe(card) in {None, target_universe}
+    ]
+    definition_counts = Counter(cell.name for cell in selected_cells)
+    definition_counts.update(
+        _unknown_cell_name(card) for card in selected_unknown_cells
+    )
+
     prepared: list[_PreparedCell] = []
     excluded: list[ExcludedCell] = []
-
-    for cell in model.cells:
+    for cell in selected_cells:
         terms = tuple(tuple(term) for term in cell.intersection_terms)
         if not terms and cell.signed_surface_references:
             terms = (tuple(cell.signed_surface_references),)
+
+        if definition_counts[cell.name] > 1:
+            excluded.append(
+                ExcludedCell(
+                    name=cell.name,
+                    location=cell.location,
+                    reasons=(
+                        GeometryExclusion(
+                            code="duplicate_cell_name",
+                            duplicate_count=definition_counts[cell.name],
+                        ),
+                    ),
+                    universe=target_universe,
+                )
+            )
+            continue
 
         reasons: list[GeometryExclusion] = []
         if not terms or any(not term for term in terms):
             reasons.append(GeometryExclusion(code="empty_region"))
 
-        for surface_name in dict.fromkeys(cell.referenced_surfaces):
+        referenced_surfaces = dict.fromkeys(
+            _unsigned_reference(reference) for term in terms for reference in term
+        )
+        for surface_name in referenced_surfaces:
             definitions = surface_groups.get(surface_name, [])
             retained_types = retained_surfaces.get(surface_name, ())
             total_definitions = len(definitions) + len(retained_types)
@@ -361,24 +627,62 @@ def _prepare_cells(
                     name=cell.name,
                     location=cell.location,
                     reasons=unique_reasons,
+                    universe=target_universe,
                 )
             )
         else:
             prepared.append(_PreparedCell(cell=cell, terms=terms))
 
-    for card in model.unknown_cards:
-        if card.keyword.lower() != "cell":
-            continue
-        name = card.tokens[1] if len(card.tokens) >= 2 else "<unknown>"
+    for card in selected_unknown_cells:
+        name = _unknown_cell_name(card)
+        reasons: list[GeometryExclusion] = [
+            GeometryExclusion(code="unsupported_cell_syntax")
+        ]
+        if definition_counts[name] > 1:
+            reasons.insert(
+                0,
+                GeometryExclusion(
+                    code="duplicate_cell_name",
+                    duplicate_count=definition_counts[name],
+                ),
+            )
         excluded.append(
             ExcludedCell(
                 name=name,
                 location=card.location,
-                reasons=(GeometryExclusion(code="unsupported_cell_syntax"),),
+                reasons=tuple(reasons),
+                universe=_unknown_cell_universe(card),
             )
         )
 
     return prepared, excluded
+
+
+def _unknown_cell_name(card: UnknownCard) -> str:
+    return card.tokens[1] if len(card.tokens) >= 2 else "<unknown>"
+
+
+def _unknown_cell_universe(card: UnknownCard) -> str | None:
+    return card.tokens[2] if len(card.tokens) >= 3 else None
+
+
+def _estimate_workload(
+    config: GeometrySamplingConfig,
+    prepared_cells: list[_PreparedCell],
+) -> GeometryWorkloadEstimate:
+    grid_point_count = config.resolution**2
+    signed_reference_count = sum(
+        len(prepared.cell.signed_surface_references) for prepared in prepared_cells
+    )
+    estimated_operations = grid_point_count * (
+        len(prepared_cells) + signed_reference_count
+    )
+    return GeometryWorkloadEstimate(
+        grid_point_count=grid_point_count,
+        evaluated_cell_count=len(prepared_cells),
+        signed_reference_count=signed_reference_count,
+        estimated_operations=estimated_operations,
+    )
 
 
 def _valid_surface_parameters(surface: Surface) -> bool:
@@ -391,23 +695,25 @@ def _valid_surface_parameters(surface: Surface) -> bool:
 
 def _signed_distance(
     surface: Surface,
-    x_grid: NDArray[np.float64],
-    y_grid: NDArray[np.float64],
+    x_values: NDArray[np.float64],
+    y_values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     x0, y0, extent = surface.parameters
     if surface.surface_type.lower() == "cyl":
-        return np.hypot(x_grid - x0, y_grid - y0) - extent
+        return np.hypot(x_values - x0, y_values - y0) - extent
     if surface.surface_type.lower() == "sqc":
-        return np.maximum(np.abs(x_grid - x0), np.abs(y_grid - y0)) - extent
+        return np.maximum(np.abs(x_values - x0), np.abs(y_values - y0)) - extent
     raise ValueError(f"Unsupported prepared surface type: {surface.surface_type}")
 
 
 def _evaluate_cell(
     prepared: _PreparedCell,
-    surface_values: dict[str, NDArray[np.float64]],
+    surfaces: dict[str, Surface],
+    x_values: NDArray[np.float64],
+    y_values: NDArray[np.float64],
     tolerance: float,
+    shape: tuple[int, ...],
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
-    shape = next(iter(surface_values.values())).shape
     cell_match = np.zeros(shape, dtype=np.bool_)
     cell_indeterminate = np.zeros(shape, dtype=np.bool_)
 
@@ -415,7 +721,8 @@ def _evaluate_cell(
         term_failed = np.zeros(shape, dtype=np.bool_)
         term_boundary = np.zeros(shape, dtype=np.bool_)
         for signed_reference in term:
-            distance = surface_values[_unsigned_reference(signed_reference)]
+            surface = surfaces[_unsigned_reference(signed_reference)]
+            distance = _signed_distance(surface, x_values, y_values)
             boundary = np.abs(distance) <= tolerance
             if signed_reference.startswith("-"):
                 condition_matches = distance < -tolerance
@@ -452,22 +759,39 @@ def _representatives(
     classifications: NDArray[np.uint8],
     x_coordinates: NDArray[np.float64],
     y_coordinates: NDArray[np.float64],
-    cell_names: list[str],
-    cell_match_masks: list[NDArray[np.bool_]],
+    prepared_cells: list[_PreparedCell],
+    surfaces: dict[str, Surface],
+    tolerance: float,
     limit: int,
 ) -> tuple[RepresentativePoint, ...]:
-    representatives: list[RepresentativePoint] = []
-    for y_index, x_index in np.argwhere(classifications == target)[:limit]:
-        involved_cells = tuple(
-            cell_name
-            for cell_name, match_mask in zip(cell_names, cell_match_masks, strict=True)
-            if match_mask[y_index, x_index]
+    indices = np.argwhere(classifications == target)[:limit]
+    if len(indices) == 0:
+        return ()
+
+    x_values = np.asarray(
+        [x_coordinates[x_index] for _, x_index in indices], dtype=np.float64
+    )
+    y_values = np.asarray(
+        [y_coordinates[y_index] for y_index, _ in indices], dtype=np.float64
+    )
+    involved_cells: list[list[str]] = [[] for _ in indices]
+    for prepared in prepared_cells:
+        match_mask, _ = _evaluate_cell(
+            prepared,
+            surfaces,
+            x_values,
+            y_values,
+            tolerance,
+            (len(indices),),
         )
-        representatives.append(
-            RepresentativePoint(
-                x=float(x_coordinates[x_index]),
-                y=float(y_coordinates[y_index]),
-                involved_cells=involved_cells,
-            )
+        for point_index in np.flatnonzero(match_mask):
+            involved_cells[point_index].append(prepared.cell.name)
+
+    return tuple(
+        RepresentativePoint(
+            x=float(x_values[index]),
+            y=float(y_values[index]),
+            involved_cells=tuple(involved_cells[index]),
         )
-    return tuple(representatives)
+        for index in range(len(indices))
+    )

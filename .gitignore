@@ -64,6 +64,8 @@ credentials*.json
 # Local Serpent inputs, work directories, and generated outputs
 local_inputs/
 private_inputs/
+local_reference_data/
+private_references/
 serpent_work/
 runs/
 results/

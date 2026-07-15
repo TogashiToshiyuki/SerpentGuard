@@ -1,0 +1,2 @@
+% Synthetic SerpentGuard fixture; malformed records are intentional.
+pbed bed background "malformed.dat"

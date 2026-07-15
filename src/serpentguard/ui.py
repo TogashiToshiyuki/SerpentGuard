@@ -18,6 +18,10 @@ from serpentguard.i18n import (
     translate,
 )
 from serpentguard.models import DiagnosticSeverity, Finding, ParsedModel
+from serpentguard.references import (
+    ExternalResolutionReport,
+    ReferenceDiagnostic,
+)
 
 SEVERITY_ORDER: tuple[DiagnosticSeverity, ...] = (
     "ERROR",
@@ -44,6 +48,28 @@ LOCALIZED_FINDING_RULE_IDS = frozenset(
 )
 _LOCALIZED_PARSER_CODES = frozenset(
     {"PARSER_IO", "PARSER_ENCODING", "PARSER001", "PARSER002", "PARSER003"}
+)
+_REFERENCE_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "MAIN_ENCODING",
+        "PBED_CARD_SYNTAX",
+        "DUPLICATE_BUNDLE_NAME",
+        "REFERENCE_MISSING",
+        "ABSOLUTE_REFERENCE_REJECTED",
+        "INVALID_REFERENCE_PATH",
+        "REFERENCE_OUTSIDE_ROOT",
+        "REFERENCE_NOT_FILE",
+        "REFERENCE_READ_FAILED",
+        "AMBIGUOUS_BUNDLE_REFERENCE",
+        "PBED_FILE_SIZE_LIMIT",
+        "PBED_RECORD_LIMIT",
+        "PBED_COLUMN_COUNT",
+        "PBED_BLANK_LINE",
+        "PBED_NUMERIC_VALUE",
+        "PBED_NON_POSITIVE_RADIUS",
+        "PBED_ENCODING",
+        "PBED_EMPTY",
+    }
 )
 
 
@@ -160,6 +186,54 @@ def localized_findings_table_rows(
     return rows
 
 
+def external_reference_table_rows(
+    report: ExternalResolutionReport,
+    language: SupportedLanguage,
+) -> list[dict[str, str]]:
+    """Flatten a sanitized reference report with localized display values."""
+    rows: list[dict[str, str]] = []
+    for resolved in report.references:
+        reference = resolved.reference
+        target_name = reference.target_name
+        if reference.path_kind == "absolute":
+            target_name = translate("reference.target.absolute", language)
+        elif reference.path_kind == "invalid":
+            target_name = translate("reference.target.invalid", language)
+        rows.append(
+            {
+                translate("reference.table.source", language): reference.source_name,
+                translate("reference.table.type", language): "PBED",
+                translate("reference.table.target", language): target_name,
+                translate("reference.table.status", language): translate(
+                    f"reference.status.{resolved.status}", language
+                ),
+                translate("reference.table.size", language): (
+                    str(resolved.file_size_bytes)
+                    if resolved.file_size_bytes is not None
+                    else ""
+                ),
+                translate("reference.table.records", language): (
+                    str(resolved.record_count)
+                    if resolved.record_count is not None
+                    else ""
+                ),
+            }
+        )
+    return rows
+
+
+def localized_reference_diagnostic_message(
+    diagnostic: ReferenceDiagnostic,
+    language: SupportedLanguage,
+) -> str:
+    """Localize a structured resolver diagnostic without changing the diagnostic."""
+    if language == ENGLISH:
+        return diagnostic.message
+    if diagnostic.code not in _REFERENCE_DIAGNOSTIC_KEYS:
+        return _untranslated_fallback(diagnostic.message, language)
+    return translate(f"reference.diagnostic.{diagnostic.code}", language)
+
+
 def parsed_model_debug_payload(model: ParsedModel) -> dict[str, Any]:
     """Create parsed-model JSON data while omitting raw card text fields."""
     payload = model.model_dump(mode="json")
@@ -201,7 +275,11 @@ def geometry_excluded_cell_rows(
                 cell.location.line_end,
             ),
             translate("geometry.table.reason", language): separator.join(
-                localized_geometry_exclusion_reason(reason, language)
+                localized_geometry_exclusion_reason(
+                    reason,
+                    language,
+                    cell_name=cell.name,
+                )
                 for reason in cell.reasons
             ),
         }
@@ -212,6 +290,8 @@ def geometry_excluded_cell_rows(
 def localized_geometry_exclusion_reason(
     reason: GeometryExclusion,
     language: SupportedLanguage,
+    *,
+    cell_name: str | None = None,
 ) -> str:
     """Render one structured geometry exclusion reason."""
     key = f"geometry.exclusion.{reason.code}"
@@ -229,6 +309,13 @@ def localized_geometry_exclusion_reason(
             language,
             surface=reason.surface_name or "<unknown>",
             surface_type=reason.surface_type or "<unknown>",
+        )
+    if reason.code == "duplicate_cell_name":
+        return translate(
+            key,
+            language,
+            cell=cell_name or "<unknown>",
+            count=reason.duplicate_count or "<unknown>",
         )
     return translate(key, language)
 

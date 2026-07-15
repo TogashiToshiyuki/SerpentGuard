@@ -20,6 +20,86 @@ The VVER and transient examples confirm that `det`, `ene`, and `include` are rea
 - [Geometry guide](https://serpent.vtt.fi/docs/user_guide/geometry.html): confirms implicit intersection, `:` union, `-` surface complement, parentheses for precedence, and `#` cell complement.
 - [Material guide](https://serpent.vtt.fi/docs/user_guide/materials.html): confirms the basic `mat NAME DENS ZAID FRAC ...` form and the sign convention for atomic and mass units.
 - [CSG surface types](https://serpent.vtt.fi/docs/extra/csg_surfaces.html): confirms the parameter forms used in the fixtures: `cyl X0 Y0 R` and `sqc X0 Y0 D`.
+- [Geometry plotting](https://serpent.vtt.fi/docs/user_guide/geometry_plotting.html):
+  confirms that Serpent material colors are random unless the material definition
+  includes `rgb R G B`, shows the option after material density, and documents RGB
+  channels on the 0–255 scale. SerpentGuard parses only the exact narrow header form
+  `mat NAME DENS rgb R G B`; other material-option combinations remain unsupported.
+
+### PBED and external geometry data
+
+PBED research was repeated on 2026-07-15 against the current official Serpent 2
+documentation (document version 0.20.0 for Serpent update 2.2.4) and the legacy
+Serpent manual:
+
+- [HTGR geometries](https://serpent.vtt.fi/docs/user_guide/geometry.html) defines
+  `pbed UNI0 BGU "FILE" [ pow ]`. `UNI0` is the pebble-bed universe, `BGU` is
+  the background universe, and `FILE` contains spherical sub-universe placements.
+  Its example distribution uses one `X Y Z R UNI` record per line.
+- [Input syntax manual: `pbed`](https://serpent.vtt.fi/docs/syntax/index.html#pbed)
+  confirms the card arguments, the surrounding background universe, and the
+  optional `pow` output request.
+- [General input](https://serpent.vtt.fi/docs/user_guide/general_input.html)
+  confirms that Serpent input strings containing whitespace, including paths, are
+  enclosed in quotation marks. This describes the `pbed` card, not comment syntax
+  inside the separate PBED distribution file.
+- [Pebble-bed power distribution output](https://serpent.vtt.fi/docs/user_guide/other_output.html#pebble-bed-power-distribution-file)
+  confirms that the first five output values reproduce the distribution input's
+  coordinates, outer radius, and universe.
+- [Legacy Serpent manual](https://serpent.vtt.fi/download/Serpent_manual.pdf),
+  section 3.8.2, independently gives `pbed <u0> <uf> "<inputfile>" [<options>]`
+  and one `<x> <y> <z> <r> <u>` record per particle or pebble.
+
+Facts verified from those official sources:
+
+- each supported PBED record has exactly five fields: center coordinates `X Y Z`,
+  outer sphere radius `R`, and particle/pebble universe `UNI`;
+- geometry lengths use Serpent's centimetre convention;
+- the optional card token currently documented is `pow`;
+- the distribution represents explicit spherical sub-universes, while space between
+  them belongs to the background universe.
+
+The official pages do not document comments, headers, delimiters other than
+whitespace, or blank-record semantics in the PBED distribution file. SerpentGuard
+therefore does not invent any PBED comment or header syntax.
+
+## Private local structural validation
+
+Two unpublished local research files were inspected only for the minimum structural
+validation needed by Prompt 6B. They are intentionally not named or linked here.
+
+Observed in the private sample:
+
+- one `pbed` card used the documented four-token form: keyword, two universe tokens,
+  and a quoted relative `.dat` target;
+- the target name contained no directory separator and resolved beside the main
+  input;
+- no other supported external geometry reference was present;
+- the referenced file contained 5,000 meaningful records, all with five numeric
+  tokens, and no comment markers were observed in the inspected structure.
+
+These observations agree with the official five-column PBED syntax. They do not
+establish a general path-search rule, filename convention, numeric-only universe-name
+requirement, or PBED comment syntax.
+
+SerpentGuard-specific policy decisions (not claims about unrestricted Serpent
+behavior):
+
+- only relative `pbed` targets are resolved;
+- uploaded targets must be present explicitly in the uploaded bundle;
+- local targets must resolve canonically inside an explicitly authorized root;
+- absolute targets and root escapes are rejected;
+- PBED text must be UTF-8 and each non-blank data line must match the verified
+  five-field form.
+
+Unresolved questions are handled conservatively:
+
+- the official PBED pages call `FILE` a file path but do not define its base-directory
+  lookup rules for every runtime invocation;
+- PBED distribution-file comment and header behavior is not documented in the
+  reviewed sources;
+- physical packing validity, allowed universe-name character sets, and behavior of
+  duplicate placement records are outside this milestone.
 
 ## Include-file observation
 

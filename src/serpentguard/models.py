@@ -78,6 +78,7 @@ class Material(SerpentGuardModel):
 
     name: str
     density: float | Literal["sum"]
+    rgb: tuple[int, int, int] | None = None
     composition: list[MaterialComponent]
     location: SourceLocation
     raw_text: str

@@ -149,3 +149,22 @@ def test_cli_check_prints_counts_without_raw_input(
     assert "Materials: 2" in output
     assert "Unknown cards: 0" in output
     assert "92235.09c" not in output
+
+
+def test_exact_documented_material_rgb_triplet_is_retained() -> None:
+    model = parse_text(
+        "mat fuel -10.0 rgb 220 55 35\n92235.09c -1.0\n",
+        file_name="rgb.inp",
+    )
+    assert model.materials[0].rgb == (220, 55, 35)
+    assert not model.diagnostics
+
+
+@pytest.mark.parametrize("rgb", ["1.0 2 3", "256 2 3", "1 2"])
+def test_invalid_or_incomplete_material_rgb_is_not_fabricated(rgb: str) -> None:
+    model = parse_text(
+        f"mat fuel -10.0 rgb {rgb}\n92235.09c -1.0\n",
+        file_name="rgb.inp",
+    )
+    assert not model.materials
+    assert model.unknown_cards
