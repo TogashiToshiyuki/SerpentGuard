@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Show Python version
+        run: python --version
+
+      - name: Verify repository structure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          required = [
+              Path("README.md"),
+              Path("LICENSE"),
+              Path(".gitignore"),
+              Path("serpentguard_implementation_spec.md"),
+              Path("docs/specification.md"),
+              Path("docs/supported_checks.md"),
+              Path("docs/privacy.md"),
+              Path("examples/README.md"),
+          ]
+          missing = [str(path) for path in required if not path.is_file()]
+          if missing:
+              raise SystemExit("Missing required files: " + ", ".join(missing))
+          print("Repository structure is present.")
+          PY
