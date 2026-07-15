@@ -2,49 +2,92 @@
 
 ## Current implementation status
 
-No parser or deterministic checks are implemented. This document records the fixture contract and planned findings for the first parser milestone; it must not be read as a claim that the checks are currently available.
+SerpentGuard performs deterministic preprocessing, limited syntactic parsing, and
+symbol-table analysis of the supported parsed model. It does not perform geometry
+sampling, detector review, physics validation, or AI analysis.
 
-## First parser milestone
+Findings use only `ERROR`, `WARNING`, `REVIEW`, or `INFO`. Each structured finding
+contains a rule ID, title, message, source file and line when available, object type and
+name when applicable, structured evidence, and a `high`, `medium`, or `low` confidence.
+Evidence never contains the full raw input.
 
-| Rule | Proposed severity | Planned behavior | Fixture |
-| --- | --- | --- | --- |
-| SG001 | ERROR | Report each repeated surface name without discarding either definition. | `duplicate_surface.inp` |
-| SG002 | ERROR | Report each repeated cell name in the same parsed input. | Planned later |
-| SG003 | ERROR | Report each repeated material name. | Planned later |
-| SG004 | ERROR | Report a signed cell-region surface reference with no parsed definition. | `undefined_surface.inp` |
-| SG005 | ERROR | Report a material-filled cell whose material has no parsed definition; exclude `void` and `outside`. | Planned later |
-| SG008 | WARNING | Report both signs of the same surface within one implicit intersection. | `contradictory_cell.inp` |
-| SG009 | WARNING | Report a repeated identical signed surface term within one implicit intersection. | Planned later |
-| SG011 | ERROR | Report a block comment that reaches end-of-file without `*/`. | Planned later |
-| SG014 | INFO | Preserve and report a reserved but unsupported card; do not interpret it. | `unknown_card.inp` |
-| SG015 | REVIEW | Report parser recovery whenever malformed supported syntax is skipped or retained only as raw text. | Planned later |
+## Implemented rules
 
-`valid_minimal.inp` is expected to produce none of the milestone findings above. These expectations are documentation only until parser and rule code is implemented.
+| Rule | Severity | Deterministic behavior |
+| --- | --- | --- |
+| SG001 | ERROR | Report an exact-name surface definition group containing more than one definition. |
+| SG002 | ERROR | Report an exact-name cell definition group containing more than one definition. |
+| SG003 | ERROR | Report an exact-name material definition group containing more than one definition. |
+| SG004 | ERROR | Report a supported parsed cell surface reference with no exact-name parsed surface definition. |
+| SG005 | ERROR | Report a material-filled supported cell with no exact-name parsed material definition; exclude `void` and `outside`. |
+| SG006 | INFO | Report a parsed surface name not referenced by any supported parsed cell. |
+| SG007 | INFO | Report a parsed material name not used by any supported material-filled cell. |
+| SG008 | WARNING | Report both positive and negative forms of one surface within the same intersection term. |
+| SG009 | WARNING | Report a repeated identical signed surface condition within one intersection term. |
+| SG010 | REVIEW | Report a parsed cell exceeding a configured syntactic complexity threshold. |
+| SG011 | ERROR | Convert an unterminated-block-comment preprocessing diagnostic into a finding. |
+| SG014 | INFO | Convert an unsupported-card diagnostic into a finding without interpreting the card. |
+| SG015 | ERROR | Convert malformed-card recovery or an input-level parser failure into a finding. |
 
-## Planned static checks
+SG008 and SG009 evaluate every union-separated intersection term independently. For
+example, `-s : s` does not contradict itself because the two signs occur in separate
+union branches. No Boolean geometry is evaluated.
 
-| Rule | Planned finding |
+## Symbol and confidence policy
+
+Definitions are retained in lists under an exact, case-preserved symbol-table key so
+duplicate definitions are never discarded. Until Serpent object-name case behavior is
+resolved for this subset, `Fuel` and `fuel` are different keys; this limitation is
+included in every report.
+
+Undefined-reference and unused-object findings describe only the supported parsed
+model. Their confidence is reduced from `high` to `medium` when an unsupported
+`include` or relevant unsupported `cell`, `surf`, or `mat` form could hide a definition
+or reference. Severity does not change: unused objects remain informational.
+
+## SG010 defaults
+
+Complexity is a manual-review signal, not an invalid-physics claim. The default
+deterministic limits are:
+
+- no more than 20 signed surface references per cell;
+- no more than 4 union operators per cell.
+
+The analyzer accepts an explicit `AnalysisConfig` for tests or later application
+configuration. Parentheses are still unsupported by the parser, so parenthesis depth
+is not yet included in SG010.
+
+## Parser integration and exit codes
+
+Parser diagnostics are converted as follows:
+
+| Parser diagnostic | Finding |
 | --- | --- |
-| SG001 | Duplicate surface |
-| SG002 | Duplicate cell |
-| SG003 | Duplicate material |
-| SG004 | Undefined surface reference |
-| SG005 | Undefined material reference |
-| SG006 | Unused surface |
-| SG007 | Unused material |
-| SG008 | Contradictory signed surface |
-| SG009 | Duplicate region condition |
-| SG010 | Excessively complex region expression |
-| SG011 | Unterminated block comment |
-| SG012 | Missing include file |
-| SG013 | Include cycle |
-| SG014 | Unsupported card |
-| SG015 | Parser recovery used |
+| Unterminated block comment | SG011 ERROR |
+| Unsupported card/form | SG014 INFO |
+| Malformed `surf`, `cell`, or `mat` retained as unknown | SG015 ERROR, recoverable |
+| Unreadable file or invalid UTF-8 | SG015 ERROR, unrecoverable |
 
-SG006, SG007, and SG010 require later symbol-table or complexity-policy work. SG012 and SG013 require safe include resolution. Detector consistency checks and sampling-based 2D overlap or undefined-region checks remain later phases.
+CLI exit codes are:
 
-## Planned syntax boundary
+- `0`: no ERROR finding;
+- `1`: one or more ERROR findings after a recoverable parse;
+- `2`: parsing could not begin because the local file was unreadable or not UTF-8.
 
-The exact proposed subset is defined in [supported syntax](supported_syntax.md). `include`, `det`, `ene`, `set`, `pin`, and `lat` are retained as unsupported cards only. Unsupported syntax must be reported rather than silently treated as validated.
+Text output groups findings by severity. JSON output is available with:
 
-See the [canonical specification](../serpentguard_implementation_spec.md) for the authoritative scope, severity definitions, and limitations.
+```powershell
+serpentguard check examples/valid_minimal.inp --format json
+```
+
+## Explicitly deferred
+
+- SG012 missing include and SG013 include cycle, pending a safe include sandbox.
+- Geometry sampling, overlap candidates, and undefined-region candidates.
+- Detector and energy-grid semantic review.
+- Material physics, normalization, temperature, depletion, or purpose-dependent review.
+- AI calls or explanations.
+
+See [supported syntax](supported_syntax.md) for the parser boundary and the
+[canonical specification](../serpentguard_implementation_spec.md) for the long-term
+roadmap.

@@ -1,6 +1,6 @@
 # Privacy
 
-SerpentGuard is intended to perform deterministic analysis locally. The optional AI explanation feature is not implemented in Phase 0 and must remain optional in later phases.
+SerpentGuard performs deterministic analysis locally. The optional AI explanation feature is not implemented and must remain optional in later phases.
 
 ## Data that must stay local
 

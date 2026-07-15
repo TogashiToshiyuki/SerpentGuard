@@ -7,9 +7,9 @@ This directory contains small, independently written SerpentGuard fixtures. They
 | Fixture | Purpose | Expected findings |
 | --- | --- | --- |
 | `valid_minimal.inp` | Supported `cyl`, `sqc`, `cell`, `mat`, `%`, and block-comment subset. | None |
-| `duplicate_surface.inp` | Repeats one surface name. | SG001 ERROR |
-| `undefined_surface.inp` | References one surface that is not defined. | SG004 ERROR |
-| `contradictory_cell.inp` | Uses both signs of one surface in an implicit intersection. | SG008 WARNING |
+| `duplicate_surface.inp` | Repeats one surface name. | SG001 ERROR; both definitions remain in the symbol table. |
+| `undefined_surface.inp` | References one surface that is not defined. | SG004 ERROR. |
+| `contradictory_cell.inp` | Uses both signs of one surface in an implicit intersection. | SG008 WARNING. |
 | `unknown_card.inp` | Uses an official `set` card that milestone one does not support. | SG014 INFO; raw card preserved |
 
 Each fixture header records its source inspiration, intentional simplification, and expected finding. See [the source review](../docs/example_sources.md) and [syntax boundary](../docs/supported_syntax.md).

@@ -1,10 +1,10 @@
 # SerpentGuard
 
-SerpentGuard is a small local Streamlit application planned to perform deterministic preflight checks on a limited subset of Serpent Monte Carlo input syntax. An optional AI feature may later explain structured findings, but raw Serpent input must never be sent to the AI.
+SerpentGuard is a small local Streamlit application for deterministic preflight checks on a limited subset of Serpent Monte Carlo input syntax. An optional AI feature may later explain structured findings, but raw Serpent input must never be sent to the AI.
 
 ## Project status
 
-The Python project foundation is present: a `src` package, placeholder Streamlit page, placeholder command-line interface, tests, linting, packaging, and CI. No parser, geometry checker, detector checker, or AI integration has been implemented.
+The first local parsing, deterministic static-analysis, and functional Streamlit milestones are implemented for a deliberately narrow `surf`, `cell`, and `mat` subset. The interface accepts one main input, records an optional analysis purpose, runs checks only after explicit user action, and provides summary counts, filterable findings, evidence, and privacy-conscious parsed-model debugging data. Supporting files can be selected for future include handling but are not opened. No geometry checker, detector checker, include resolution, physics review, or AI integration has been implemented.
 
 The supported runtime is Python 3.11 or newer. SerpentGuard has no database and is intended to run locally rather than as an externally deployed server.
 
@@ -30,17 +30,21 @@ The OpenAI Python SDK is declared only as an optional future dependency. It is n
 
 ## Run locally
 
-Start the placeholder Streamlit page:
+Start the local Streamlit interface:
 
 ```powershell
-python -m streamlit run app.py
+streamlit run app.py
 ```
 
-Inspect the placeholder CLI:
+The equivalent module command is `python -m streamlit run app.py`.
+
+Inspect the CLI and parse a local UTF-8 fixture:
 
 ```powershell
 serpentguard --help
 serpentguard check --help
+serpentguard check examples/valid_minimal.inp
+serpentguard check examples/valid_minimal.inp --format json
 ```
 
 If a local application-control policy blocks generated console-script shims, use
@@ -49,9 +53,14 @@ the equivalent module commands:
 ```powershell
 python -m serpentguard.cli --help
 python -m serpentguard.cli check --help
+python -m serpentguard.cli check examples/valid_minimal.inp
+python -m serpentguard.cli check examples/valid_minimal.inp --format json
 ```
 
-The `check` command does not accept or process Serpent input yet.
+The `check` command prints parsed object counts and source-located findings grouped by
+severity, or a structured JSON report. It does not run geometry, detector, physics, or
+AI checks, follow include files, or print raw input. Exit status is 0 without ERROR, 1
+with a recoverable ERROR, and 2 when the local input cannot be parsed at all.
 
 ## Development checks
 
@@ -74,7 +83,8 @@ pre-commit install
 
 - [Canonical implementation specification](serpentguard_implementation_spec.md)
 - [Specification index](docs/specification.md)
-- [Supported-check roadmap](docs/supported_checks.md)
+- [Implemented syntax boundary](docs/supported_syntax.md)
+- [Supported checks and roadmap](docs/supported_checks.md)
 - [Privacy policy](docs/privacy.md)
 - [Example-file policy](examples/README.md)
 
@@ -94,7 +104,7 @@ Only sanitized, redistributable fixtures should be added under `examples/`.
 ## Important limitations
 
 - SerpentGuard is an experimental assistant.
-- It will support only a limited subset of Serpent syntax.
+- It supports only a limited subset of Serpent syntax.
 - It does not guarantee that a model is geometrically or physically correct.
 - Planned geometry checks are sampling-based and may miss narrow overlaps or gaps.
 - It does not replace Serpent's own input validation or geometry plotter.
