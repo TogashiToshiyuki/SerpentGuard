@@ -2,9 +2,9 @@
 
 ## Current implementation status
 
-SerpentGuard performs deterministic preprocessing, limited syntactic parsing, and
-symbol-table analysis of the supported parsed model. It does not perform geometry
-sampling, detector review, physics validation, or AI analysis.
+SerpentGuard performs deterministic preprocessing, limited syntactic parsing,
+symbol-table analysis, and user-triggered XY geometry sampling of the supported parsed
+model. It does not perform detector review, physics validation, or AI analysis.
 
 Findings use only `ERROR`, `WARNING`, `REVIEW`, or `INFO`. Each structured finding
 contains a rule ID, title, message, source file and line when available, object type and
@@ -31,7 +31,39 @@ Evidence never contains the full raw input.
 
 SG008 and SG009 evaluate every union-separated intersection term independently. For
 example, `-s : s` does not contradict itself because the two signs occur in separate
-union branches. No Boolean geometry is evaluated.
+union branches. These static rules do not evaluate Boolean geometry; the separate
+sampler below evaluates only the documented subset.
+
+## Limited XY geometry sampling
+
+Geometry sampling is a separate language-independent numerical operation, not a
+`Finding` rule and not part of CLI exit status. In the Streamlit interface, the user
+must explicitly confirm `xmin`, `xmax`, `ymin`, `ymax`, a z coordinate, and a square
+grid resolution before sampling starts. Range endpoints are included.
+
+Only parsed cells whose complete region expression uses one unambiguous, valid `cyl`
+or `sqc` definition are evaluated. A cell with an unsupported, undefined, duplicate,
+or malformed surface—or unsupported cell syntax—is listed as excluded and is never
+approximated. The reported classifications therefore describe the included supported
+cells. If no cells can be evaluated, every grid point is indeterminate.
+
+Each point is classified as:
+
+- undefined-region candidate when zero included cells match;
+- normal when exactly one included cell matches;
+- overlap candidate when two or more included cells match;
+- indeterminate when a supported surface lies within the configured absolute boundary
+  tolerance, or no cell can be evaluated.
+
+The code default for boundary tolerance is `1e-9`; the interface exposes it explicitly.
+The result includes a Matplotlib classification plot, point counts, deterministic
+representative coordinates, involved cell names for overlap candidates, excluded-cell
+reasons, and the confirmed range and resolution. z is recorded for the selected XY
+slice, while the currently supported infinite-z `cyl` and `sqc` forms are invariant in
+z.
+
+This is a sampling aid, not a geometric proof. Narrow gaps or overlaps between grid
+points may be missed, and the check does not replace the Serpent geometry plotter.
 
 ## Symbol and confidence policy
 
@@ -83,7 +115,8 @@ serpentguard check examples/valid_minimal.inp --format json
 ## Explicitly deferred
 
 - SG012 missing include and SG013 include cycle, pending a safe include sandbox.
-- Geometry sampling, overlap candidates, and undefined-region candidates.
+- Additional surface types, lattice/universe expansion, transformations, nested CSG,
+  adaptive sampling, and 3D geometry visualization.
 - Detector and energy-grid semantic review.
 - Material physics, normalization, temperature, depletion, or purpose-dependent review.
 - AI calls or explanations.

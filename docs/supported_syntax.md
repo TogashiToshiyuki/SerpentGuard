@@ -4,8 +4,8 @@
 
 The deterministic parser and first symbol-table milestone are implemented. The parser
 deliberately covers less than Serpent and must not be described as general Serpent
-input support. Parsing and static checks are local and offline; no geometry, detector,
-physics, or AI analysis occurs.
+input support. Parsing, static checks, and the optional XY geometry sampler are local
+and offline; no detector, physics, or AI analysis occurs.
 
 ## Input and lexical behavior
 
@@ -66,7 +66,10 @@ rules.
 - Other surface types are retained as `UnknownCard` with `SG014 INFO`.
 - Bad field counts or malformed numeric parameters are retained as `UnknownCard` with
   `PARSER001 ERROR`.
-- No geometry meaning or parameter constraints are evaluated.
+- Static parsing does not assign geometry meaning. The separate geometry sampler
+  accepts only a positive third parameter and evaluates `cyl X0 Y0 R` as a circle
+  centered at `(X0, Y0)` with radius `R`, and `sqc X0 Y0 D` as an axis-aligned square
+  centered at `(X0, Y0)` with half-width `D`.
 
 ### `cell`
 
@@ -83,6 +86,9 @@ rules.
 - Missing fields produce `PARSER002 ERROR`.
 - The static analyzer checks exact-name references, duplicate signed conditions, and
   contradictory signs independently within each union branch.
+- For geometry sampling only, a negative reference selects signed distance less than
+  zero (inside), and a positive reference selects signed distance greater than zero
+  (outside). Adjacent references are intersected and `:` branches are unioned.
 
 ### `mat`
 
@@ -117,7 +123,8 @@ set until an explicit local-file sandbox policy is designed.
 - Detector and energy-grid parsing.
 - Material options and full nuclide alias syntax.
 - Surface types other than `cyl` and `sqc`.
-- Geometry evaluation, overlap checks, and region sampling.
+- Surface geometry beyond `cyl` and `sqc`, lattice or universe expansion,
+  transformations, cell complements, nested Boolean grouping, and 3D visualization.
 - Quoted-string-aware comment handling.
 - AI calls or explanations.
 
