@@ -4,9 +4,71 @@ SerpentGuard is a small local Streamlit application planned to perform determini
 
 ## Project status
 
-The project is currently in repository initialization (Phase 0). No parser, geometry checker, Streamlit application, or AI integration has been implemented yet.
+The Python project foundation is present: a `src` package, placeholder Streamlit page, placeholder command-line interface, tests, linting, packaging, and CI. No parser, geometry checker, detector checker, or AI integration has been implemented.
 
-The planned runtime is Python 3.11 or newer. The initial GitHub Actions workflow only confirms that Python is available and that the repository has its required bootstrap files.
+The supported runtime is Python 3.11 or newer. SerpentGuard has no database and is intended to run locally rather than as an externally deployed server.
+
+## Setup
+
+Create and activate a virtual environment:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+On macOS or Linux, activate it with `source .venv/bin/activate` instead.
+
+Install the application and development tools:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install --editable ".[dev]"
+```
+
+The OpenAI Python SDK is declared only as an optional future dependency. It is not installed by the command above and is not imported or called by the application. If a later phase requires it, install the `ai` extra explicitly with `python -m pip install --editable ".[ai]"`.
+
+## Run locally
+
+Start the placeholder Streamlit page:
+
+```powershell
+python -m streamlit run app.py
+```
+
+Inspect the placeholder CLI:
+
+```powershell
+serpentguard --help
+serpentguard check --help
+```
+
+If a local application-control policy blocks generated console-script shims, use
+the equivalent module commands:
+
+```powershell
+python -m serpentguard.cli --help
+python -m serpentguard.cli check --help
+```
+
+The `check` command does not accept or process Serpent input yet.
+
+## Development checks
+
+Run the same checks used by CI:
+
+```powershell
+ruff check .
+ruff format --check .
+pytest
+python -m build
+```
+
+Optional local Git hooks can be enabled after installing the development tools:
+
+```powershell
+pre-commit install
+```
 
 ## Documentation
 

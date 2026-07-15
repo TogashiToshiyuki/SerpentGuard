@@ -1,0 +1,15 @@
+% Source inspiration: set bc cards in the official pin-cell and assembly examples.
+% Intentional simplification: valid minimal structure plus one unsupported reserved card.
+% Expected findings: SG014 INFO for set; preserve the raw card and continue.
+
+surf outersurf sqc 0.0 0.0 0.65
+
+cell fuelcell 0 fuel -outersurf
+cell outsidecell 0 outside outersurf
+
+mat fuel -10.0
+92235.09c -0.04
+92238.09c -0.84
+8016.09c -0.12
+
+set bc 2

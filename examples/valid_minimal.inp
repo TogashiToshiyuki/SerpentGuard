@@ -1,0 +1,22 @@
+% Source inspiration: official 2D PWR pin-cell burnup example and CSG geometry guide.
+% Intentional simplification: independently written two-surface model; no pin, set, or run cards.
+% Expected findings: none for the documented first parser milestone.
+
+/* This confirmed Serpent block-comment form is intentionally ignored.
+   It also verifies that newline locations remain stable after preprocessing. */
+
+surf fuelsurf cyl 0.0 0.0 0.40
+surf outersurf sqc 0.0 0.0 0.65
+
+cell fuelcell 0 fuel -fuelsurf
+cell watercell 0 water fuelsurf -outersurf
+cell outsidecell 0 outside outersurf
+
+mat fuel -10.0
+92235.09c -0.04
+92238.09c -0.84
+8016.09c -0.12
+
+mat water -1.0
+1001.09c -0.1119
+8016.09c -0.8881

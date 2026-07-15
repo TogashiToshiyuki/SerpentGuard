@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  repository-structure:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -19,27 +19,27 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
-      - name: Show Python version
-        run: python --version
-
-      - name: Verify repository structure
+      - name: Install project and development tools
         run: |
-          python - <<'PY'
-          from pathlib import Path
+          python -m pip install --upgrade pip
+          python -m pip install --editable ".[dev]"
 
-          required = [
-              Path("README.md"),
-              Path("LICENSE"),
-              Path(".gitignore"),
-              Path("serpentguard_implementation_spec.md"),
-              Path("docs/specification.md"),
-              Path("docs/supported_checks.md"),
-              Path("docs/privacy.md"),
-              Path("examples/README.md"),
-          ]
-          missing = [str(path) for path in required if not path.is_file()]
-          if missing:
-              raise SystemExit("Missing required files: " + ", ".join(missing))
-          print("Repository structure is present.")
-          PY
+      - name: Lint
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Test
+        run: pytest
+
+      - name: Verify CLI help
+        run: |
+          serpentguard --help
+          serpentguard check --help
+
+      - name: Build distributions
+        run: python -m build

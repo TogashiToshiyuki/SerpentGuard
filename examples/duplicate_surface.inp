@@ -1,0 +1,15 @@
+% Source inspiration: surface cards in the official 2D PWR pin-cell example.
+% Intentional simplification: original values and names; only one duplicated definition.
+% Expected findings: SG001 ERROR for the repeated surface name fuelsurf.
+
+surf fuelsurf cyl 0.0 0.0 0.40
+surf fuelsurf cyl 0.0 0.0 0.41
+surf outersurf sqc 0.0 0.0 0.65
+
+cell fuelcell 0 fuel -fuelsurf
+cell outsidecell 0 outside outersurf
+
+mat fuel -10.0
+92235.09c -0.04
+92238.09c -0.84
+8016.09c -0.12
