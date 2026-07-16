@@ -1,0 +1,8 @@
+% Synthetic detector syntax fixture; not a production reactor model.
+surf boundary sqc 0.0 0.0 10.0
+cell domain 0 void -boundary
+cell exterior 0 outside boundary
+
+ene thermal 3 10 1.0E-9 1.0E-6
+det flux n de thermal dx -10.0 10.0 20 dy -10.0 10.0 20
+    dr -1 void

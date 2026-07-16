@@ -84,6 +84,59 @@ class Material(SerpentGuardModel):
     raw_text: str
 
 
+class EnergyGrid(SerpentGuardModel):
+    """One supported explicit or generated detector energy-grid definition."""
+
+    name: str
+    grid_type: Literal[1, 2, 3]
+    bin_count: int
+    boundaries: list[float] = Field(default_factory=list)
+    minimum: float | None = None
+    maximum: float | None = None
+    location: SourceLocation
+    raw_text: str
+
+
+class DetectorEnergyGridReference(SerpentGuardModel):
+    """A detector ``de`` option with its option-level source location."""
+
+    name: str
+    location: SourceLocation
+
+
+class DetectorMeshAxis(SerpentGuardModel):
+    """One supported uniform Cartesian detector mesh axis."""
+
+    axis: Literal["x", "y", "z"]
+    minimum: float
+    maximum: float
+    bin_count: int
+    location: SourceLocation
+
+
+class DetectorUnsupportedOption(SerpentGuardModel):
+    """An uninterpreted detector option retained without guessing semantics."""
+
+    keyword: str
+    tokens: list[str]
+    reason: Literal["unsupported", "duplicate", "malformed"]
+    location: SourceLocation
+
+
+class Detector(SerpentGuardModel):
+    """A detector containing only the selected, independently parsed options."""
+
+    name: str
+    particle: Literal["n", "p", "g"] | None = None
+    energy_grid_references: list[DetectorEnergyGridReference] = Field(
+        default_factory=list
+    )
+    mesh_axes: list[DetectorMeshAxis] = Field(default_factory=list)
+    unsupported_options: list[DetectorUnsupportedOption] = Field(default_factory=list)
+    location: SourceLocation
+    raw_text: str
+
+
 class UnknownCard(SerpentGuardModel):
     """An unsupported or malformed card retained without interpretation."""
 
@@ -99,6 +152,8 @@ class ParsedModel(SerpentGuardModel):
     surfaces: list[Surface] = Field(default_factory=list)
     cells: list[Cell] = Field(default_factory=list)
     materials: list[Material] = Field(default_factory=list)
+    energy_grids: list[EnergyGrid] = Field(default_factory=list)
+    detectors: list[Detector] = Field(default_factory=list)
     unknown_cards: list[UnknownCard] = Field(default_factory=list)
     diagnostics: list[ParserDiagnostic] = Field(default_factory=list)
     source_files: list[str] = Field(default_factory=list)

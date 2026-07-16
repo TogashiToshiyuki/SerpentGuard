@@ -1,6 +1,6 @@
 # Official example sources
 
-Reviewed on 2026-07-15. The [Serpent official example collection](https://serpent.vtt.fi/mediawiki/index.php/Collection_of_example_input_files) is the primary source for this research. The linked Serpent documentation is used to confirm syntax that cannot be established safely from examples alone.
+Reviewed through 2026-07-16. The [Serpent official example collection](https://serpent.vtt.fi/mediawiki/index.php/Collection_of_example_input_files) is the primary source for this research. The linked Serpent documentation is used to confirm syntax that cannot be established safely from examples alone.
 
 ## Representative examples reviewed
 
@@ -11,7 +11,9 @@ Reviewed on 2026-07-15. The [Serpent official example collection](https://serpen
 | [2D VVER-440 fuel assembly geometry](https://serpent.vtt.fi/mediawiki/index.php/2D_VVER-440_fuel_assembly_geometry) | Assembly example that also defines an energy grid and detectors. | `surf` with `hexyc`; signed surface lists; `mat` compositions; `ene 1 3 1000 1E-9 12.0`; detectors that refer to the energy grid with `de 1`. |
 | [3D BWR assembly transient example](https://serpent.vtt.fi/mediawiki/index.php/3D_PWR_assembly_transient_example) | Multi-file official example and an independent detector example. | Main inputs use `include pins`, `include geometry`, and `include materials`; the same page provides the three additional file bodies. It also contains detector cards and surfaces including `sqc`, `pz`, and `cuboid`. |
 
-The VVER and transient examples confirm that `det`, `ene`, and `include` are real cards that the first parser must preserve as unsupported cards. They are research inputs, not milestone-one parsing targets.
+The VVER and transient examples confirm the `ene NAME 3 N EMIN EMAX` and
+`det NAME ... de EGRID` relationship used by the limited detector milestone. Fixtures
+remain independently written rather than copied from those models.
 
 ## Authoritative syntax references
 
@@ -25,6 +27,14 @@ The VVER and transient examples confirm that `det`, `ene`, and `include` are rea
   includes `rgb R G B`, shows the option after material density, and documents RGB
   channels on the 0–255 scale. SerpentGuard parses only the exact narrow header form
   `mat NAME DENS rgb R G B`; other material-option combinations remain unsupported.
+- [Detector guide](https://serpent.vtt.fi/docs/user_guide/detectors.html): confirms
+  optional particle tokens, `de EGRID`, and uniform Cartesian detector meshes
+  `dx XMIN XMAX NX`, `dy YMIN YMAX NY`, and `dz ZMIN ZMAX NZ`. It also confirms that
+  omitted dimensions are integrated rather than proving that a particular binning
+  choice is appropriate.
+- [Input syntax manual](https://serpent.vtt.fi/docs/syntax/index.html#ene): confirms
+  `ene` type 1 explicit boundaries and type 2/3 generated grids, including the number
+  of bins and minimum/maximum energies.
 
 ### PBED and external geometry data
 

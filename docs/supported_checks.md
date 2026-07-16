@@ -3,8 +3,9 @@
 ## Current implementation status
 
 SerpentGuard performs deterministic preprocessing, limited syntactic parsing,
-symbol-table analysis, and user-triggered XY geometry sampling of the supported parsed
-model. It does not perform detector review, physics validation, or AI analysis.
+symbol-table analysis, limited detector/energy-grid checks, and user-triggered XY
+geometry sampling of the supported parsed model. It does not perform detector-purpose
+review, response physics validation, or AI analysis.
 
 Findings use only `ERROR`, `WARNING`, `REVIEW`, or `INFO`. Each structured finding
 contains a rule ID, title, message, source file and line when available, object type and
@@ -33,11 +34,38 @@ Evidence never contains the full raw input.
 | SG018 | ERROR | Report duplicate or ambiguous normalized supporting-file names. |
 | SG019 | ERROR | Report an empty PBED file, unsupported encoding, blank or malformed record, non-finite coordinate, or non-positive radius; invalid records are excluded. |
 | SG020 | ERROR | Reject an external file or PBED record stream that exceeds configured limits. |
+| SG021 | ERROR | Report an exact-name detector definition group containing more than one definition. |
+| SG022 | ERROR | Report a supported detector `de` reference with no exact-name parsed energy-grid definition. |
+| SG023 | ERROR | Report a non-positive explicit or inferred energy-grid bin count or Cartesian detector-axis bin count. |
+| SG024 | ERROR | Report `EMIN >= EMAX` for `ene` types 2/3 or `MIN >= MAX` for `dx`, `dy`, or `dz`. |
+| SG025 | REVIEW | Report the product of supported detector mesh/energy bins when it exceeds the configured threshold. |
+| SG026 | REVIEW | Report a detector XY rectangle completely outside one unambiguous supported root-geometry bounding box. |
+| SG027 | INFO | Preserve a duplicate or unsupported detector option without interpreting it. |
 
 SG008 and SG009 evaluate every union-separated intersection term independently. For
 example, `-s : s` does not contradict itself because the two signs occur in separate
 union branches. These static rules do not evaluate Boolean geometry; the separate
 sampler below evaluates only the documented subset.
+
+## Limited detector checks
+
+Detector checks operate only on the parsed `de`, `dx`, `dy`, and `dz` subset. Exact
+case is used for energy-grid names. SG025 multiplies the positive supported axis counts
+and the uniquely resolved energy-grid bin count; it is skipped when a required factor
+is undefined, ambiguous, non-positive, or has reversed limits. The default review
+threshold is `1,000,000` total bins. This is a workload/review signal, not a claim that
+the requested detector is physically inappropriate.
+
+SG026 is deliberately conservative and REVIEW-only. It runs only when Universe `0`
+contains an `outside` Cell with one positive reference to one uniquely defined
+supported `cyl` or `sqc` surface, yielding an unambiguous XY bounding box. Both `dx`
+and `dy` must be valid, and the detector rectangle must be disjoint from that box.
+The check is disabled when a retained transformation card is present. No z bound is
+inferred because the supported surfaces are infinite in z.
+
+Unsupported detector options are retained with option-level locations and SG027 INFO.
+Malformed selected options use SG015 ERROR. SerpentGuard does not judge response
+selection, axial-binning suitability, statistics, normalization, or analysis purpose.
 
 ## Limited XY geometry sampling
 
@@ -156,7 +184,7 @@ Parser diagnostics are converted as follows:
 | --- | --- |
 | Unterminated block comment | SG011 ERROR |
 | Unsupported card/form | SG014 INFO |
-| Malformed `surf`, `cell`, or `mat` retained as unknown | SG015 ERROR, recoverable |
+| Malformed `surf`, `cell`, `mat`, or `ene`, or malformed selected `det` option | SG015 ERROR, recoverable |
 | Unreadable file or invalid UTF-8 | SG015 ERROR, unrecoverable |
 
 CLI exit codes are:
@@ -176,7 +204,8 @@ serpentguard check examples/valid_minimal.inp --format json
 - SG012 missing include and SG013 include cycle; Prompt 6B resolves `pbed` data only.
 - Additional surface types, lattice/universe expansion, transformations, nested CSG,
   adaptive sampling, and 3D geometry visualization.
-- Detector and energy-grid semantic review.
+- Detector responses, time bins, non-Cartesian meshes, transformations, statistics,
+  normalization, and purpose-dependent review.
 - Material physics, normalization, temperature, depletion, or purpose-dependent review.
 - AI calls or explanations.
 

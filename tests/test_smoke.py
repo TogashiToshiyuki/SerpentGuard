@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from serpentguard import __version__
+from serpentguard.ai_review import (
+    AIExplanationResponse,
+    AIPrioritizedFinding,
+    AIReviewServiceError,
+)
 from serpentguard.i18n import LANGUAGE_SESSION_KEY
 from serpentguard.references import ExternalResolutionReport
 
@@ -51,17 +58,28 @@ def test_streamlit_page_waits_for_explicit_run() -> None:
         ("Purpose (optional)", "")
     ]
     assert [(button.label, button.disabled) for button in app.button] == [
-        ("Run check", True)
+        ("Run check", True),
+        ("Generate AI explanation", True),
+    ]
+    assert [(item.label, item.value, item.disabled) for item in app.checkbox] == [
+        (
+            "I have reviewed the data shown above and agree to send this JSON for "
+            "AI explanation.",
+            False,
+            True,
+        )
     ]
     info_messages = [item.value for item in app.info]
-    assert any("Analysis is local" in message for message in info_messages)
+    assert any(
+        "Deterministic analysis is local" in message for message in info_messages
+    )
     assert (
         "Run the deterministic input check before configuring geometry sampling."
         in info_messages
     )
     assert (
-        "AI review is optional and has not been enabled in this milestone."
-        in info_messages
+        "Run the local deterministic check to create a privacy-preserving AI payload "
+        "preview." in info_messages
     )
     assert len(app.get("metric")) == 0
     assert len(app.get("dataframe")) == 0
@@ -83,6 +101,8 @@ def test_streamlit_runs_parser_and_rule_engine_after_button_press() -> None:
         "Surfaces": "3",
         "Cells": "2",
         "Materials": "1",
+        "Energy grids": "0",
+        "Detectors": "0",
         "Unknown cards": "0",
         "ERROR": "1",
         "WARNING": "0",
@@ -98,6 +118,130 @@ def test_streamlit_runs_parser_and_rule_engine_after_button_press() -> None:
         "Evidence 1: SG001 — fuelsurf",
         "Parsed model JSON (debugging)",
     ]
+
+
+def test_streamlit_displays_limited_detector_findings() -> None:
+    app = AppTest.from_file("app.py", default_timeout=30).run()
+    fixture = Path("tests/fixtures/detectors/valid_detector.inp").read_bytes()
+
+    app.get("file_uploader")[0].upload("valid_detector.inp", fixture).run()
+    app.button[0].click().run()
+
+    assert not app.exception
+    metrics = {item.label: item.value for item in app.get("metric")}
+    assert metrics["Energy grids"] == "1"
+    assert metrics["Detectors"] == "1"
+    assert [(item.label, item.value) for item in app.multiselect] == [
+        ("Severity", ["ERROR", "WARNING", "REVIEW", "INFO"]),
+        ("Rule ID", ["SG027"]),
+    ]
+
+
+def test_streamlit_previews_payload_and_handles_missing_key_without_network(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("SERPENTGUARD_OPENAI_MODEL", raising=False)
+    app = AppTest.from_file("app.py", default_timeout=30).run()
+    fixture = Path("tests/fixtures/detectors/valid_detector.inp").read_bytes()
+    app.get("file_uploader")[0].upload("valid_detector.inp", fixture).run()
+    app.button[0].click().run()
+
+    consent = next(
+        item
+        for item in app.checkbox
+        if item.label.startswith("I have reviewed the data shown above")
+    )
+    generate = next(
+        item for item in app.button if item.label == "Generate AI explanation"
+    )
+    assert not consent.disabled
+    assert not consent.value
+    assert generate.disabled
+    payload_json = next(
+        json.loads(item.value)
+        for item in app.get("json")
+        if isinstance(item.value, str)
+        and json.loads(item.value).get("schema_version") == "1.0"
+    )
+    assert payload_json["object_counts"]["detectors"] == 1
+    assert "raw_text" not in str(payload_json)
+
+    consent.check().run()
+    generate = next(
+        item for item in app.button if item.label == "Generate AI explanation"
+    )
+    assert not generate.disabled
+
+    generate.click().run()
+    assert any("OPENAI_API_KEY is not set" in item.value for item in app.error)
+
+
+def _mock_ai_explanation() -> AIExplanationResponse:
+    return AIExplanationResponse(
+        summary="One unsupported detector option needs review.",
+        prioritized_findings=[
+            AIPrioritizedFinding(
+                rule_id="SG027",
+                priority="medium",
+                rationale="The option was retained without interpretation.",
+            )
+        ],
+        explanation="The deterministic INFO finding remains unchanged.",
+        suggested_checks=["Review the option in authoritative Serpent documentation."],
+        confidence="high",
+        limitations=["Only the previewed structured payload was available."],
+    )
+
+
+def _run_to_ai_consent() -> AppTest:
+    app = AppTest.from_file("app.py", default_timeout=30).run()
+    fixture = Path("tests/fixtures/detectors/valid_detector.inp").read_bytes()
+    app.get("file_uploader")[0].upload("valid_detector.inp", fixture).run()
+    app.button[0].click().run()
+    consent = next(
+        item
+        for item in app.checkbox
+        if item.label.startswith("I have reviewed the data shown above")
+    )
+    consent.check().run()
+    return app
+
+
+def test_streamlit_calls_mocked_ai_only_after_explicit_generate() -> None:
+    with patch(
+        "serpentguard.ai_review.generate_ai_explanation",
+        return_value=_mock_ai_explanation(),
+    ) as mocked_generate:
+        app = _run_to_ai_consent()
+        mocked_generate.assert_not_called()
+
+        generate = next(
+            item for item in app.button if item.label == "Generate AI explanation"
+        )
+        generate.click().run()
+
+    mocked_generate.assert_called_once()
+    sent_payload = mocked_generate.call_args.args[0].model_dump_json()
+    assert "raw_text" not in sent_payload
+    assert any("Optional AI explanation" in heading.value for heading in app.markdown)
+    assert any("AI output is advisory" in item.value for item in app.warning)
+
+
+def test_streamlit_keeps_static_findings_visible_when_mocked_ai_fails() -> None:
+    with patch(
+        "serpentguard.ai_review.generate_ai_explanation",
+        side_effect=AIReviewServiceError("network"),
+    ) as mocked_generate:
+        app = _run_to_ai_consent()
+        generate = next(
+            item for item in app.button if item.label == "Generate AI explanation"
+        )
+        generate.click().run()
+
+    mocked_generate.assert_called_once()
+    assert any("could not be reached" in item.value for item in app.error)
+    assert any(dataframe.value is not None for dataframe in app.get("dataframe"))
 
 
 def test_streamlit_geometry_requires_explicit_form_submission() -> None:
@@ -318,7 +462,7 @@ def test_language_switch_preserves_upload_result_and_canonical_filters() -> None
     ("arguments", "expected_text"),
     [
         (["--help"], "Local deterministic preflight checks"),
-        (["check", "--help"], "deterministic symbol-table checks"),
+        (["check", "--help"], "limited detector checks"),
     ],
 )
 def test_cli_help(arguments: list[str], expected_text: str) -> None:

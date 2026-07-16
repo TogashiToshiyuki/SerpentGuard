@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from math import prod
 from typing import TypeVar
 
 from serpentguard.models import (
     AnalysisReport,
     Cell,
+    Detector,
     DiagnosticSeverity,
+    EnergyGrid,
     Finding,
     FindingConfidence,
     Material,
@@ -21,7 +24,7 @@ from serpentguard.models import (
 )
 
 UNRECOVERABLE_PARSER_CODES = frozenset({"PARSER_IO", "PARSER_ENCODING"})
-DefinitionT = TypeVar("DefinitionT", Surface, Cell, Material)
+DefinitionT = TypeVar("DefinitionT", Surface, Cell, Material, EnergyGrid, Detector)
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,12 +33,15 @@ class AnalysisConfig:
 
     max_region_references: int = 20
     max_union_operators: int = 4
+    max_detector_total_bins: int = 1_000_000
 
     def __post_init__(self) -> None:
         if self.max_region_references < 1:
             raise ValueError("max_region_references must be at least 1")
         if self.max_union_operators < 0:
             raise ValueError("max_union_operators cannot be negative")
+        if self.max_detector_total_bins < 1:
+            raise ValueError("max_detector_total_bins must be at least 1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +51,8 @@ class SymbolTable:
     surfaces: dict[str, list[Surface]]
     cells: dict[str, list[Cell]]
     materials: dict[str, list[Material]]
+    energy_grids: dict[str, list[EnergyGrid]]
+    detectors: dict[str, list[Detector]]
 
     @classmethod
     def from_model(cls, model: ParsedModel) -> SymbolTable:
@@ -52,6 +60,8 @@ class SymbolTable:
             surfaces=_group_by_name(model.surfaces),
             cells=_group_by_name(model.cells),
             materials=_group_by_name(model.materials),
+            energy_grids=_group_by_name(model.energy_grids),
+            detectors=_group_by_name(model.detectors),
         )
 
 
@@ -89,6 +99,14 @@ def analyze_model(
             object_type="material",
         )
     )
+    findings.extend(
+        _duplicate_findings(
+            symbols.detectors,
+            rule_id="SG021",
+            title="Duplicate detector",
+            object_type="detector",
+        )
+    )
     findings.extend(_undefined_surface_findings(model, symbols))
     findings.extend(_undefined_material_findings(model, symbols))
     findings.extend(_unused_surface_findings(model, symbols))
@@ -96,6 +114,11 @@ def analyze_model(
     findings.extend(_contradictory_surface_findings(model))
     findings.extend(_duplicate_condition_findings(model))
     findings.extend(_complexity_findings(model, active_config))
+    findings.extend(_undefined_energy_grid_findings(model, symbols))
+    findings.extend(_invalid_detector_bin_findings(model))
+    findings.extend(_extreme_detector_bin_findings(model, symbols, active_config))
+    findings.extend(_detector_extent_findings(model, symbols))
+    findings.extend(_unsupported_detector_option_findings(model))
     findings.extend(_diagnostic_findings(model))
 
     return AnalysisReport(
@@ -103,14 +126,19 @@ def analyze_model(
             "surfaces": len(model.surfaces),
             "cells": len(model.cells),
             "materials": len(model.materials),
+            "energy_grids": len(model.energy_grids),
+            "detectors": len(model.detectors),
             "unknown_cards": len(model.unknown_cards),
             "parser_diagnostics": len(model.diagnostics),
         },
         findings=findings,
         limitations=[
-            "Only the documented parsed surf, cell, and mat subset is analyzed.",
+            (
+                "Only the documented parsed surf, cell, mat, ene, and det subset "
+                "is analyzed."
+            ),
             "Object names are matched exactly with case preserved.",
-            "Includes, geometry, detectors, physics, and AI are not analyzed.",
+            "Detector purpose, response physics, includes, and AI are not analyzed.",
         ],
     )
 
@@ -132,7 +160,8 @@ def _group_by_name(
 def _duplicate_findings(
     groups: dict[str, list[Surface]]
     | dict[str, list[Cell]]
-    | dict[str, list[Material]],
+    | dict[str, list[Material]]
+    | dict[str, list[Detector]],
     *,
     rule_id: str,
     title: str,
@@ -417,6 +446,346 @@ def _complexity_findings(
                 confidence="high",
             )
         )
+    return findings
+
+
+def _undefined_energy_grid_findings(
+    model: ParsedModel,
+    symbols: SymbolTable,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    incomplete = _has_unknown_syntax(model, {"det", "ene"})
+    for detector in model.detectors:
+        for reference in detector.energy_grid_references:
+            if reference.name in symbols.energy_grids:
+                continue
+            findings.append(
+                _finding(
+                    rule_id="SG022",
+                    severity="ERROR",
+                    title="Undefined detector energy-grid reference",
+                    message=(
+                        f"Detector '{detector.name}' references energy grid "
+                        f"'{reference.name}', but no supported definition with that "
+                        "exact name was parsed."
+                    ),
+                    location=reference.location,
+                    object_type="detector",
+                    object_name=detector.name,
+                    evidence={
+                        "reference": reference.name,
+                        "matching_policy": "exact-case",
+                        "analysis_scope": "supported-parsed-energy-grids",
+                    },
+                    confidence=_scope_confidence(incomplete),
+                )
+            )
+    return findings
+
+
+def _invalid_detector_bin_findings(model: ParsedModel) -> list[Finding]:
+    findings: list[Finding] = []
+    for grid in model.energy_grids:
+        if grid.bin_count <= 0:
+            findings.append(
+                _finding(
+                    rule_id="SG023",
+                    severity="ERROR",
+                    title="Non-positive bin count",
+                    message=(
+                        f"Energy grid '{grid.name}' has non-positive bin count "
+                        f"{grid.bin_count}."
+                    ),
+                    location=grid.location,
+                    object_type="energy_grid",
+                    object_name=grid.name,
+                    evidence={
+                        "option": "ene",
+                        "bin_count": grid.bin_count,
+                    },
+                    confidence="high",
+                )
+            )
+        if (
+            grid.grid_type in {2, 3}
+            and grid.minimum is not None
+            and grid.maximum is not None
+            and grid.minimum >= grid.maximum
+        ):
+            findings.append(
+                _invalid_bounds_finding(
+                    name=grid.name,
+                    object_type="energy_grid",
+                    option="ene",
+                    minimum=grid.minimum,
+                    maximum=grid.maximum,
+                    location=grid.location,
+                )
+            )
+
+    for detector in model.detectors:
+        for axis in detector.mesh_axes:
+            option = f"d{axis.axis}"
+            if axis.bin_count <= 0:
+                findings.append(
+                    _finding(
+                        rule_id="SG023",
+                        severity="ERROR",
+                        title="Non-positive bin count",
+                        message=(
+                            f"Detector '{detector.name}' option '{option}' has "
+                            f"non-positive bin count {axis.bin_count}."
+                        ),
+                        location=axis.location,
+                        object_type="detector",
+                        object_name=detector.name,
+                        evidence={
+                            "option": option,
+                            "bin_count": axis.bin_count,
+                        },
+                        confidence="high",
+                    )
+                )
+            if axis.minimum >= axis.maximum:
+                findings.append(
+                    _invalid_bounds_finding(
+                        name=detector.name,
+                        object_type="detector",
+                        option=option,
+                        minimum=axis.minimum,
+                        maximum=axis.maximum,
+                        location=axis.location,
+                    )
+                )
+    return findings
+
+
+def _invalid_bounds_finding(
+    *,
+    name: str,
+    object_type: str,
+    option: str,
+    minimum: float,
+    maximum: float,
+    location: SourceLocation,
+) -> Finding:
+    object_label = "Energy grid" if object_type == "energy_grid" else "Detector"
+    return _finding(
+        rule_id="SG024",
+        severity="ERROR",
+        title="Invalid bin range",
+        message=(
+            f"{object_label} '{name}' option '{option}' has minimum {minimum} "
+            f"greater than or equal to maximum {maximum}."
+        ),
+        location=location,
+        object_type=object_type,
+        object_name=name,
+        evidence={
+            "option": option,
+            "minimum": minimum,
+            "maximum": maximum,
+        },
+        confidence="high",
+    )
+
+
+def _extreme_detector_bin_findings(
+    model: ParsedModel,
+    symbols: SymbolTable,
+    config: AnalysisConfig,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    for detector in model.detectors:
+        factors: dict[str, int] = {}
+        invalid = False
+        for axis in detector.mesh_axes:
+            if axis.bin_count <= 0 or axis.minimum >= axis.maximum:
+                invalid = True
+                break
+            factors[f"d{axis.axis}"] = axis.bin_count
+        if invalid:
+            continue
+
+        references = detector.energy_grid_references
+        if len(references) > 1:
+            continue
+        if references:
+            definitions = symbols.energy_grids.get(references[0].name, [])
+            if len(definitions) != 1 or definitions[0].bin_count <= 0:
+                continue
+            grid = definitions[0]
+            if (
+                grid.grid_type in {2, 3}
+                and grid.minimum is not None
+                and grid.maximum is not None
+                and grid.minimum >= grid.maximum
+            ):
+                continue
+            factors["de"] = grid.bin_count
+
+        total_bins = prod(factors.values()) if factors else 1
+        if total_bins <= config.max_detector_total_bins:
+            continue
+        findings.append(
+            _finding(
+                rule_id="SG025",
+                severity="REVIEW",
+                title="Extreme detector bin count",
+                message=(
+                    f"Detector '{detector.name}' produces {total_bins} bins across "
+                    "the supported options, exceeding the configured review "
+                    f"threshold {config.max_detector_total_bins}."
+                ),
+                location=detector.location,
+                object_type="detector",
+                object_name=detector.name,
+                evidence={
+                    "total_bin_count": total_bins,
+                    "threshold": config.max_detector_total_bins,
+                    "factors": factors,
+                },
+                confidence="high",
+            )
+        )
+    return findings
+
+
+@dataclass(frozen=True, slots=True)
+class _XYBounds:
+    xmin: float
+    xmax: float
+    ymin: float
+    ymax: float
+    surface_name: str
+
+
+def _detector_extent_findings(
+    model: ParsedModel,
+    symbols: SymbolTable,
+) -> list[Finding]:
+    bounds = _available_root_xy_bounds(model, symbols)
+    if bounds is None:
+        return []
+    findings: list[Finding] = []
+    for detector in model.detectors:
+        axes = {axis.axis: axis for axis in detector.mesh_axes}
+        x_axis = axes.get("x")
+        y_axis = axes.get("y")
+        if x_axis is None or y_axis is None:
+            continue
+        if (
+            x_axis.minimum >= x_axis.maximum
+            or y_axis.minimum >= y_axis.maximum
+            or x_axis.bin_count <= 0
+            or y_axis.bin_count <= 0
+        ):
+            continue
+        completely_outside = (
+            x_axis.maximum < bounds.xmin
+            or x_axis.minimum > bounds.xmax
+            or y_axis.maximum < bounds.ymin
+            or y_axis.minimum > bounds.ymax
+        )
+        if not completely_outside:
+            continue
+        findings.append(
+            _finding(
+                rule_id="SG026",
+                severity="REVIEW",
+                title="Detector extent outside available geometry bounds",
+                message=(
+                    f"Detector '{detector.name}' has an XY mesh extent completely "
+                    "outside the available supported root-geometry bounding box."
+                ),
+                location=detector.location,
+                object_type="detector",
+                object_name=detector.name,
+                evidence={
+                    "detector_xy_bounds": [
+                        x_axis.minimum,
+                        x_axis.maximum,
+                        y_axis.minimum,
+                        y_axis.maximum,
+                    ],
+                    "geometry_xy_bounds": [
+                        bounds.xmin,
+                        bounds.xmax,
+                        bounds.ymin,
+                        bounds.ymax,
+                    ],
+                    "geometry_boundary_surface": bounds.surface_name,
+                    "geometry_universe": "0",
+                },
+                confidence="high",
+            )
+        )
+    return findings
+
+
+def _available_root_xy_bounds(
+    model: ParsedModel,
+    symbols: SymbolTable,
+) -> _XYBounds | None:
+    if any(card.keyword in {"trans", "dtrans"} for card in model.unknown_cards):
+        return None
+    boundary_names: list[str] = []
+    for cell in model.cells:
+        terms = _intersection_terms(cell)
+        if cell.universe != "0" or cell.fill_type != "outside" or len(terms) != 1:
+            continue
+        if len(terms[0]) != 1 or terms[0][0].startswith("-"):
+            continue
+        boundary_names.append(terms[0][0])
+    if len(boundary_names) != 1:
+        return None
+    surface_name = boundary_names[0]
+    definitions = symbols.surfaces.get(surface_name, [])
+    if len(definitions) != 1:
+        return None
+    surface = definitions[0]
+    if (
+        surface.surface_type not in {"cyl", "sqc"}
+        or len(surface.parameters) != 3
+        or surface.parameters[2] <= 0.0
+    ):
+        return None
+    x0, y0, extent = surface.parameters
+    return _XYBounds(
+        xmin=x0 - extent,
+        xmax=x0 + extent,
+        ymin=y0 - extent,
+        ymax=y0 + extent,
+        surface_name=surface.name,
+    )
+
+
+def _unsupported_detector_option_findings(model: ParsedModel) -> list[Finding]:
+    findings: list[Finding] = []
+    for detector in model.detectors:
+        for option in detector.unsupported_options:
+            if option.reason == "malformed":
+                continue
+            findings.append(
+                _finding(
+                    rule_id="SG027",
+                    severity="INFO",
+                    title="Unsupported detector option",
+                    message=(
+                        f"Detector '{detector.name}' option '{option.keyword}' was "
+                        "retained without interpretation."
+                    ),
+                    location=option.location,
+                    object_type="detector",
+                    object_name=detector.name,
+                    evidence={
+                        "option": option.keyword,
+                        "reason": option.reason,
+                        "token_count": len(option.tokens),
+                    },
+                    confidence="high",
+                )
+            )
     return findings
 
 

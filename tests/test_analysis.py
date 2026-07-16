@@ -14,6 +14,7 @@ from serpentguard.models import Finding
 from serpentguard.parser import parse_file, parse_text
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
+DETECTOR_FIXTURES = Path(__file__).parent / "fixtures" / "detectors"
 
 
 def _analyze(text: str, *, config: AnalysisConfig | None = None):
@@ -207,6 +208,98 @@ def test_sg015_parser_recovery_is_integrated_without_raw_value() -> None:
     assert "not-a-number" not in finding.message
 
 
+def test_sg021_duplicate_detector_name() -> None:
+    report = _analyze("det score\ndet score\n")
+
+    assert [item.rule_id for item in report.findings] == ["SG021"]
+    assert report.findings[0].severity == "ERROR"
+    assert report.findings[0].evidence["definition_count"] == 2
+
+
+def test_sg022_undefined_detector_energy_grid_reference() -> None:
+    report = _analyze("det spectrum de missing_grid\n")
+
+    assert [item.rule_id for item in report.findings] == ["SG022"]
+    finding = report.findings[0]
+    assert finding.object_name == "spectrum"
+    assert finding.evidence["reference"] == "missing_grid"
+
+
+def test_sg023_non_positive_energy_and_mesh_bin_counts() -> None:
+    report = _analyze("ene empty 3 0 1.0E-9 1.0\ndet mesh de empty dx -1.0 1.0 -2\n")
+
+    findings = [item for item in report.findings if item.rule_id == "SG023"]
+    assert len(findings) == 2
+    assert {item.evidence["option"] for item in findings} == {"ene", "dx"}
+    assert all(item.severity == "ERROR" for item in findings)
+
+
+def test_sg024_minimum_must_be_less_than_maximum() -> None:
+    report = _analyze("ene reversed 2 10 2.0 1.0\ndet mesh de reversed dy 4.0 4.0 2\n")
+
+    findings = [item for item in report.findings if item.rule_id == "SG024"]
+    assert len(findings) == 2
+    assert {item.evidence["option"] for item in findings} == {"ene", "dy"}
+    assert all(item.severity == "ERROR" for item in findings)
+
+
+def test_sg025_extreme_total_detector_bin_count_is_review() -> None:
+    report = _analyze(
+        "ene groups 3 10 1.0E-9 1.0\ndet large de groups dx 0.0 4.0 4 dy 0.0 3.0 3\n",
+        config=AnalysisConfig(max_detector_total_bins=100),
+    )
+
+    finding = next(item for item in report.findings if item.rule_id == "SG025")
+    assert finding.severity == "REVIEW"
+    assert finding.evidence == {
+        "total_bin_count": 120,
+        "threshold": 100,
+        "factors": {"dx": 4, "dy": 3, "de": 10},
+    }
+
+
+def test_sg026_detector_xy_extent_completely_outside_supported_root_bounds() -> None:
+    report = _analyze(
+        "surf boundary sqc 0 0 10\n"
+        "cell domain 0 void -boundary\n"
+        "cell exterior 0 outside boundary\n"
+        "det remote dx 20 30 5 dy -1 1 5\n"
+    )
+
+    assert [item.rule_id for item in report.findings] == ["SG026"]
+    finding = report.findings[0]
+    assert finding.severity == "REVIEW"
+    assert finding.evidence["geometry_xy_bounds"] == [-10.0, 10.0, -10.0, 10.0]
+
+
+def test_sg027_unsupported_detector_option_is_info_and_preserved() -> None:
+    parsed = parse_file(DETECTOR_FIXTURES / "valid_detector.inp")
+    report = analyze_model(parsed)
+
+    assert [item.rule_id for item in report.findings] == ["SG027"]
+    finding = report.findings[0]
+    assert finding.severity == "INFO"
+    assert finding.evidence["option"] == "dr"
+    assert parsed.detectors[0].unsupported_options[0].tokens == ["dr", "-1", "void"]
+
+
+def test_axial_binning_purpose_is_not_a_deterministic_error() -> None:
+    report = _analyze("det axial dz -100.0 100.0 1\n")
+
+    assert report.findings == []
+
+
+def test_independent_invalid_detector_fixture_exercises_expected_rules() -> None:
+    report = analyze_model(parse_file(DETECTOR_FIXTURES / "invalid_detector.inp"))
+
+    assert {item.rule_id for item in report.findings} == {
+        "SG021",
+        "SG022",
+        "SG023",
+        "SG024",
+    }
+
+
 def test_finding_rejects_unknown_severity() -> None:
     with pytest.raises(ValidationError):
         Finding(
@@ -251,3 +344,15 @@ def test_cli_json_report_is_structured_and_has_no_raw_input(
     assert payload["findings"][0]["rule_id"] == "SG014"
     assert payload["findings"][0]["file"].endswith("unknown_card.inp")
     assert "set bc 2" not in json.dumps(payload)
+
+
+def test_cli_includes_detector_counts_and_findings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    return_code = main(["check", str(DETECTOR_FIXTURES / "valid_detector.inp")])
+    output = capsys.readouterr().out
+
+    assert return_code == 0
+    assert "Energy grids: 1" in output
+    assert "Detectors: 1" in output
+    assert "SG027" in output

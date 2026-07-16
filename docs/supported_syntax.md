@@ -36,7 +36,7 @@ This notation describes the SerpentGuard subset, not the complete Serpent gramma
 
 ```text
 document          := (comment | blank | surf-card | cell-card | mat-card |
-                      pbed-card | unknown-card)*
+                      ene-card | det-card | pbed-card | unknown-card)*
 
 surf-card         := "surf" name supported-surface
 supported-surface := "cyl" number number number
@@ -52,6 +52,15 @@ mat-card          := "mat" name density ["rgb" rgb-channel rgb-channel rgb-chann
 density           := number | "sum"
 rgb-channel       := integer from 0 through 255
 composition-line  := numeric-zaid number
+
+ene-card          := "ene" name "1" boundary boundary*
+                   | "ene" name ("2" | "3") integer number number
+
+det-card          := "det" name [particle] detector-option*
+particle          := "n" | "p" | "g"
+detector-option   := "de" name
+                   | ("dx" | "dy" | "dz") number number integer
+                   | unsupported-detector-option
 
 unknown-card      := card-keyword raw-token*
 
@@ -153,6 +162,43 @@ overlaps, undefined candidates (complete coverage only), incomplete/unsupported
 points, and boundary-indeterminate points. Both views use nearest-neighbor discrete
 rendering and one selected Universe. They are limited SerpentGuard visualizations and
 do not replace Serpent's geometry plotter.
+
+### `ene`
+
+The parser supports only the three formats confirmed by the current official syntax:
+
+- `ene NAME 1 E1 E2 ...` retains a finite explicit boundary list. Officially, the
+  list may be ascending or descending. The inferred bin count is one less than the
+  number of boundaries; fewer than two boundaries produces SG023.
+- `ene NAME 2 N EMIN EMAX` describes a uniform grid.
+- `ene NAME 3 N EMIN EMAX` describes a log-uniform grid.
+
+`N` must be a syntactic base-10 integer, while energies must be finite numbers. A
+non-positive `N` is parsed so SG023 can report it. For types 2 and 3, `EMIN >= EMAX`
+produces SG024. Other numeric grid types are retained as `UnknownCard`/SG014 rather
+than being assigned undocumented behavior. Malformed supported forms produce
+`PARSER004`/SG015.
+
+### `det`
+
+The first detector subset supports only:
+
+- an exact detector name and optional particle token `n`, `p`, or `g`;
+- `de EGRID`, retaining an exact-case energy-grid reference;
+- `dx XMIN XMAX NX`, `dy YMIN YMAX NY`, and `dz ZMIN ZMAX NZ`, retaining finite
+  Cartesian limits and an integer bin count.
+
+Options are recognized as whitespace-separated option tokens, including across
+lines. Each selected option may occur once. Repeated selected options and documented
+but unsupported options (`dr`, `dm`, `dc`, `du`, `dn`, `dh`, `ds`, `dt`, and the
+other official `d*` families) are stored in `Detector.unsupported_options` and produce
+SG027 INFO. Their arguments are not interpreted. A malformed selected option produces
+`PARSER005`/SG015 while the detector and option tokens remain locally inspectable.
+
+This is not complete detector syntax. SerpentGuard does not interpret responses,
+materials, Cells, surfaces, detector flags, transformations, special detector modes,
+files, time bins, or purpose-dependent questions. In particular, it does not decide
+whether axial or energy binning is appropriate for a user's analysis.
 
 ### `pbed` external placement data
 

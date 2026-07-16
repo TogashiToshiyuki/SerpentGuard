@@ -46,8 +46,8 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "criticality-safety validity. Review every finding independently."
         ),
         "app.local_notice": (
-            "Analysis is local. Uploaded input is parsed in this Streamlit process "
-            "and is not sent to an AI service."
+            "Deterministic analysis is local. Raw uploaded input is never sent to AI; "
+            "only the visible sanitized JSON may be sent after explicit consent."
         ),
         "section.upload": "1. Upload Serpent input",
         "section.purpose": "2. Analysis purpose",
@@ -97,6 +97,8 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "metric.surfaces": "Surfaces",
         "metric.cells": "Cells",
         "metric.materials": "Materials",
+        "metric.energy_grids": "Energy grids",
+        "metric.detectors": "Detectors",
         "metric.unknown_cards": "Unknown cards",
         "severity.ERROR": "ERROR",
         "severity.WARNING": "WARNING",
@@ -297,7 +299,90 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "every definition was excluded."
         ),
         "ai.placeholder": (
-            "AI review is optional and has not been enabled in this milestone."
+            "Run the local deterministic check to create a privacy-preserving AI "
+            "payload preview."
+        ),
+        "ai.preview.caption": (
+            "This is the only JSON eligible for a future AI explanation. Raw input, "
+            "comments, material composition, absolute paths, and secrets are excluded."
+        ),
+        "ai.preview.findings": (
+            "The preview contains {included} of {selected} findings selected by the "
+            "current filters."
+        ),
+        "ai.consent": (
+            "I have reviewed the data shown above and agree to send this JSON for AI "
+            "explanation."
+        ),
+        "ai.generate": "Generate AI explanation",
+        "ai.generate.help": (
+            "Review the JSON preview and select the confirmation checkbox first."
+        ),
+        "ai.payload_error": (
+            "The privacy-preserving payload could not be created. No data was sent."
+        ),
+        "ai.spinner": "Requesting the optional structured AI explanation...",
+        "ai.result.advisory": (
+            "AI output is advisory. Deterministic findings above remain authoritative "
+            "and must be reviewed by a qualified user."
+        ),
+        "ai.result.heading": "Optional AI explanation",
+        "ai.result.summary": "Summary",
+        "ai.result.prioritized": "Prioritized findings",
+        "ai.result.rule_id": "Rule ID",
+        "ai.result.priority": "Priority",
+        "ai.result.rationale": "Rationale",
+        "ai.result.no_prioritized": "The AI response prioritized no findings.",
+        "ai.result.explanation": "Explanation",
+        "ai.result.suggested_checks": "Suggested checks",
+        "ai.result.confidence": "AI confidence: {confidence}",
+        "ai.result.limitations": "Limitations",
+        "ai.error.missing_api_key": (
+            "OPENAI_API_KEY is not set. Configure it as an environment variable; "
+            "never commit an API key."
+        ),
+        "ai.error.missing_model": (
+            "SERPENTGUARD_OPENAI_MODEL is not set. Configure an available structured-"
+            "output model in the environment."
+        ),
+        "ai.error.invalid_configuration": (
+            "The OpenAI model or timeout environment setting is invalid. No data was "
+            "sent."
+        ),
+        "ai.error.sdk_unavailable": (
+            "The optional OpenAI SDK is not installed. Install the project with the "
+            "'ai' extra."
+        ),
+        "ai.error.authentication": (
+            "OpenAI authentication failed. Check that the environment API key is "
+            "valid and active."
+        ),
+        "ai.error.timeout": "The OpenAI request timed out. You may explicitly retry.",
+        "ai.error.rate_limit": (
+            "The OpenAI rate limit was reached. Wait before explicitly retrying."
+        ),
+        "ai.error.network": (
+            "The OpenAI service could not be reached. Check the network, proxy, SSL, "
+            "and firewall configuration."
+        ),
+        "ai.error.invalid_structured_response": (
+            "The OpenAI response did not match the required structured schema. Local "
+            "findings remain available."
+        ),
+        "ai.error.partial_response": (
+            "The OpenAI response was incomplete and was not displayed. Local findings "
+            "remain available."
+        ),
+        "ai.error.refusal": (
+            "The model declined or could not safely produce the requested structured "
+            "explanation."
+        ),
+        "ai.error.api_failure": (
+            "The OpenAI API returned an error. Local deterministic findings remain "
+            "available."
+        ),
+        "ai.error.payload_rejected": (
+            "The payload failed the local privacy audit, so no API request was made."
         ),
         "table.severity": "Severity",
         "table.rule_id": "Rule ID",
@@ -308,6 +393,8 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "object.surface": "surface",
         "object.cell": "cell",
         "object.material": "material",
+        "object.energy_grid": "energy grid",
+        "object.detector": "detector",
         "object.card": "card",
         "object.comment": "comment",
         "object.input": "input",
@@ -387,6 +474,46 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "A malformed material card was retained without interpretation and "
             "parsing continued."
         ),
+        "finding.SG015.message.PARSER004": (
+            "A malformed energy-grid card was retained without interpretation and "
+            "parsing continued."
+        ),
+        "finding.SG015.message.PARSER005": (
+            "A malformed supported detector option was retained without "
+            "interpretation and parsing continued."
+        ),
+        "finding.SG021.title": "Duplicate detector",
+        "finding.SG021.message": (
+            "Detector '{name}' is defined {definition_count} times in the parsed model."
+        ),
+        "finding.SG022.title": "Undefined detector energy-grid reference",
+        "finding.SG022.message": (
+            "Detector '{detector}' references energy grid '{reference}', but no "
+            "supported definition with that exact name was parsed."
+        ),
+        "finding.SG023.title": "Non-positive bin count",
+        "finding.SG023.message": (
+            "'{name}' option '{option}' has non-positive bin count {bin_count}."
+        ),
+        "finding.SG024.title": "Invalid bin range",
+        "finding.SG024.message": (
+            "'{name}' option '{option}' has minimum {minimum} greater than or equal "
+            "to maximum {maximum}."
+        ),
+        "finding.SG025.title": "Extreme detector bin count",
+        "finding.SG025.message": (
+            "Detector '{name}' produces {total_bins} supported bins, exceeding the "
+            "configured review threshold {threshold}."
+        ),
+        "finding.SG026.title": "Detector extent outside available geometry bounds",
+        "finding.SG026.message": (
+            "Detector '{name}' has an XY mesh extent completely outside the available "
+            "supported root-geometry bounding box."
+        ),
+        "finding.SG027.title": "Unsupported detector option",
+        "finding.SG027.message": (
+            "Detector '{name}' option '{option}' was retained without interpretation."
+        ),
     },
     JAPANESE: {
         "language.selector": "表示言語",
@@ -398,8 +525,8 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "個別に確認してください．"
         ),
         "app.local_notice": (
-            "解析はローカルで実行されます．アップロードした入力はこのStreamlitプロセス"
-            "内で解析され，AIサービスには送信されません．"
+            "決定論的解析はローカルで実行されます．アップロードした生入力はAIへ送信"
+            "されず，明示的な同意後に表示中のsanitized JSONだけを送信できます．"
         ),
         "section.upload": "1. Serpent入力のアップロード",
         "section.purpose": "2. 解析目的",
@@ -450,6 +577,8 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "metric.surfaces": "Surface",
         "metric.cells": "Cell",
         "metric.materials": "Material",
+        "metric.energy_grids": "Energy grid",
+        "metric.detectors": "Detector",
         "metric.unknown_cards": "未対応カード",
         "severity.ERROR": "エラー",
         "severity.WARNING": "警告",
@@ -643,7 +772,97 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "定義を除外しました．"
         ),
         "ai.placeholder": (
-            "AIレビューは任意機能であり，このマイルストーンでは有効化されていません．"
+            "ローカルの決定論的検査を実行すると，プライバシーに配慮したAI用payloadの"
+            "プレビューを作成できます．"
+        ),
+        "ai.preview.caption": (
+            "将来AIによる説明へ送信できるJSONは，ここに表示するものだけです．生の入力，"
+            "コメント，Material組成，絶対パス，秘密情報は含まれません．"
+        ),
+        "ai.preview.findings": (
+            "現在のフィルターで選択された{selected}件の検出事項のうち，{included}件を"
+            "プレビューに含めています．"
+        ),
+        "ai.consent": (
+            "上に表示されたデータを確認し，AIによる説明のためにこのJSONを送信することに"
+            "同意します．"
+        ),
+        "ai.generate": "AIによる説明を生成",
+        "ai.generate.help": (
+            "JSONプレビューを確認し，先に確認チェックボックスを選択してください．"
+        ),
+        "ai.payload_error": (
+            "プライバシーに配慮したpayloadを作成できませんでした．データは送信されて"
+            "いません．"
+        ),
+        "ai.spinner": "任意の構造化AI説明を要求しています…",
+        "ai.result.advisory": (
+            "AIの出力は参考情報です．上に表示した決定論的な検出事項を優先し，資格を有する"
+            "利用者が確認してください．"
+        ),
+        "ai.result.heading": "任意のAIによる説明",
+        "ai.result.summary": "要約",
+        "ai.result.prioritized": "優先度を付けた検出事項",
+        "ai.result.rule_id": "ルールID",
+        "ai.result.priority": "優先度",
+        "ai.result.rationale": "理由",
+        "ai.result.no_prioritized": (
+            "AI応答で優先対象に指定された検出事項はありません．"
+        ),
+        "ai.result.explanation": "説明",
+        "ai.result.suggested_checks": "推奨する確認事項",
+        "ai.result.confidence": "AIの確信度：{confidence}",
+        "ai.result.limitations": "制約事項",
+        "ai.error.missing_api_key": (
+            "OPENAI_API_KEYが設定されていません．API keyは環境変数で設定し，"
+            "commitしないで"
+            "ください．"
+        ),
+        "ai.error.missing_model": (
+            "SERPENTGUARD_OPENAI_MODELが設定されていません．structured outputに対応する"
+            "利用可能なモデルを環境変数で設定してください．"
+        ),
+        "ai.error.invalid_configuration": (
+            "OpenAIのモデル名またはtimeoutの環境変数が不正です．データは送信されて"
+            "いません．"
+        ),
+        "ai.error.sdk_unavailable": (
+            "任意依存のOpenAI SDKがインストールされていません．プロジェクトを'ai' extra"
+            "付きでインストールしてください．"
+        ),
+        "ai.error.authentication": (
+            "OpenAIの認証に失敗しました．環境変数のAPI keyが有効であることを確認して"
+            "ください．"
+        ),
+        "ai.error.timeout": (
+            "OpenAIへの要求がtimeoutになりました．必要なら明示的に再実行してください．"
+        ),
+        "ai.error.rate_limit": (
+            "OpenAIのrate limitに達しました．時間を置いてから明示的に再実行して"
+            "ください．"
+        ),
+        "ai.error.network": (
+            "OpenAIサービスへ接続できませんでした．network，proxy，SSL，firewallの設定を"
+            "確認してください．"
+        ),
+        "ai.error.invalid_structured_response": (
+            "OpenAIの応答が必須の構造化schemaと一致しませんでした．ローカルの検出事項は"
+            "引き続き利用できます．"
+        ),
+        "ai.error.partial_response": (
+            "OpenAIの応答が不完全だったため表示しません．ローカルの検出事項は引き続き"
+            "利用できます．"
+        ),
+        "ai.error.refusal": (
+            "モデルが要求された構造化説明の生成を拒否したか，安全に生成できませんでした．"
+        ),
+        "ai.error.api_failure": (
+            "OpenAI APIがエラーを返しました．ローカルの決定論的な検出事項は引き続き"
+            "利用できます．"
+        ),
+        "ai.error.payload_rejected": (
+            "payloadがローカルのprivacy監査に合格しなかったため，API要求は行いません"
+            "でした．"
         ),
         "table.severity": "重大度",
         "table.rule_id": "ルールID",
@@ -654,6 +873,8 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "object.surface": "Surface",
         "object.cell": "Cell",
         "object.material": "Material",
+        "object.energy_grid": "Energy grid",
+        "object.detector": "Detector",
         "object.card": "未対応カード",
         "object.comment": "コメント",
         "object.input": "入力",
@@ -727,6 +948,44 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         ),
         "finding.SG015.message.PARSER003": (
             "不正なMaterialカードを未解釈のまま保持し，構文解析を継続しました．"
+        ),
+        "finding.SG015.message.PARSER004": (
+            "不正なEnergy gridカードを未解釈のまま保持し，構文解析を継続しました．"
+        ),
+        "finding.SG015.message.PARSER005": (
+            "不正な対応対象Detectorオプションを未解釈のまま保持し，構文解析を継続しました．"
+        ),
+        "finding.SG021.title": "Detectorの重複定義",
+        "finding.SG021.message": (
+            "解析済みモデル内でDetector「{name}」が{definition_count}回定義されています．"
+        ),
+        "finding.SG022.title": "未定義Energy grid参照",
+        "finding.SG022.message": (
+            "Detector「{detector}」はEnergy grid「{reference}」を参照していますが，"
+            "同名の対応済み定義を解析できませんでした．"
+        ),
+        "finding.SG023.title": "正でないビン数",
+        "finding.SG023.message": (
+            "「{name}」のオプション「{option}」に正でないビン数{bin_count}が指定されています．"
+        ),
+        "finding.SG024.title": "無効なビン範囲",
+        "finding.SG024.message": (
+            "「{name}」のオプション「{option}」では，最小値{minimum}が最大値{maximum}"
+            "以上です．"
+        ),
+        "finding.SG025.title": "極端に多いDetectorビン",
+        "finding.SG025.message": (
+            "Detector「{name}」の対応済みビン総数は{total_bins}で，要確認しきい値"
+            "{threshold}を超えています．"
+        ),
+        "finding.SG026.title": "Detector範囲が体系境界外",
+        "finding.SG026.message": (
+            "Detector「{name}」のXYメッシュ範囲は，利用可能な対応済みroot体系境界"
+            "ボックスの完全な外側にあります．"
+        ),
+        "finding.SG027.title": "未対応Detectorオプション",
+        "finding.SG027.message": (
+            "Detector「{name}」のオプション「{option}」は，内容を解釈せず保持しました．"
         ),
     },
 }

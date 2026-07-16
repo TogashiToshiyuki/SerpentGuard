@@ -1,10 +1,18 @@
 # SerpentGuard
 
-SerpentGuard is a small local Streamlit application for deterministic preflight checks on a limited subset of Serpent Monte Carlo input syntax. An optional AI feature may later explain structured findings, but raw Serpent input must never be sent to the AI.
+SerpentGuard is a small local Streamlit application for deterministic preflight checks on a limited subset of Serpent Monte Carlo input syntax. An optional OpenAI feature can explain only the reviewed structured payload; raw Serpent input must never be sent to the AI.
 
 ## Project status
 
-The local parser, deterministic static analyzer, bilingual Streamlit interface, a deliberately limited 2D geometry sampler, and sandboxed PBED placement-file support are implemented. The interface accepts either an explicit uploaded bundle or an authorized local project, records an optional analysis purpose, runs each check only after explicit user action, and provides summary counts, filterable findings, evidence, privacy-conscious debugging data, dependency status, and local plots. No detector checker, include resolution, physics review, or AI integration has been implemented.
+The local parser, deterministic static analyzer, limited detector/energy-grid checks,
+bilingual Streamlit interface, deliberately limited 2D geometry sampler, and sandboxed
+PBED placement-file support are implemented. A versioned, privacy-preserving AI review
+payload can be previewed locally and optionally sent to OpenAI only after explicit
+consent and a Generate action. The interface accepts either an explicit uploaded bundle
+or an authorized local project, records an optional analysis purpose, runs each check
+only after explicit user action, and provides summary counts, filterable findings,
+evidence, privacy-conscious debugging data, dependency status, and local plots. No
+detector-purpose/response-physics review or general include resolution is implemented.
 
 The supported runtime is Python 3.11 or newer. SerpentGuard has no database and is intended to run locally rather than as an externally deployed server.
 
@@ -26,7 +34,45 @@ python -m pip install --upgrade pip
 python -m pip install --editable ".[dev]"
 ```
 
-The OpenAI Python SDK is declared only as an optional future dependency. It is not installed by the command above and is not imported or called by the application. If a later phase requires it, install the `ai` extra explicitly with `python -m pip install --editable ".[ai]"`.
+The deterministic application works without the optional OpenAI SDK. To enable AI
+explanations in a development installation, install both extras:
+
+```powershell
+python -m pip install --editable ".[dev,ai]"
+```
+
+## Optional OpenAI explanation
+
+Configure the key and model in the shell that starts Streamlit. Never place a real key
+in source code, `.env.example`, Git, screenshots, or an issue report.
+
+PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY = "your_api_key_here"
+$env:SERPENTGUARD_OPENAI_MODEL = "a-model-available-to-your-project"
+$env:SERPENTGUARD_OPENAI_TIMEOUT_SECONDS = "30"
+```
+
+macOS or Linux:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export SERPENTGUARD_OPENAI_MODEL="a-model-available-to-your-project"
+export SERPENTGUARD_OPENAI_TIMEOUT_SECONDS="30"
+```
+
+SerpentGuard intentionally has no hard-coded model default. Select a model available
+to your OpenAI project that supports the Responses API and structured outputs. See the
+[official structured-output guide](https://developers.openai.com/api/docs/guides/structured-outputs)
+and [API-key quickstart](https://developers.openai.com/api/docs/quickstart).
+
+The application does not automatically load `.env.example`; it documents variable
+names only. The optional API request occurs only after local analysis, visible payload
+preview, checkbox consent, and an explicit Generate button press. The request uses
+`store=False` and sends the `AIReviewPayload` JSON as its only user input. Local static
+findings remain visible if authentication, timeout, rate-limit, network, partial-output,
+or schema validation fails.
 
 ## Run locally
 
@@ -42,6 +88,11 @@ For a redistributable geometry demo, upload
 `tests/fixtures/geometry/pwr_pin_cell.inp`, run the deterministic check, sample
 Universe `0` over approximately `x,y = [-0.75, 0.75]`, and open the Geometry view.
 The fixture is independently written and is not a production reactor model.
+
+For the redistributable detector demo, upload
+`tests/fixtures/detectors/valid_detector.inp`. The parser recognizes `ene` types 1–3
+and only detector options `de`, `dx`, `dy`, and `dz`; the fixture's `dr` option is
+intentionally retained and reported as SG027 INFO.
 
 The interface supports English and Japanese (`日本語`), with English as the default.
 Use the language selector above the page title to switch languages. Switching redraws
@@ -118,10 +169,11 @@ python -m serpentguard.cli check examples/valid_minimal.inp --format json
 ```
 
 The `check` command prints parsed object counts and source-located findings grouped by
-severity, or a structured JSON report. Geometry sampling is available only in the
-local Streamlit interface; the CLI does not run geometry, detector, physics, or AI
-checks, follow include files, or print raw input. Exit status is 0 without ERROR, 1
-with a recoverable ERROR, and 2 when the local input cannot be parsed at all.
+severity, or a structured JSON report. Limited deterministic detector checks run in
+both the CLI and Streamlit interface. Geometry sampling remains Streamlit-only. The
+CLI does not perform detector-purpose/response-physics review, AI checks, or include
+resolution, and it does not print raw input. Exit status is 0 without ERROR, 1 with a
+recoverable ERROR, and 2 when the local input cannot be parsed at all.
 
 ## Development checks
 
@@ -200,7 +252,10 @@ Only sanitized, redistributable fixtures should be added under `examples/`.
   by the platform, but cannot eliminate every filesystem time-of-check/time-of-use
   race against a concurrently modified local project.
 - It does not replace Serpent's own input validation or geometry plotter.
-- Future AI-generated explanations may be incomplete or incorrect.
+- The AI payload preview contains only allowlisted summaries. Its consent-gated
+  Generate button is the only Streamlit path that may call the OpenAI API.
+- AI-generated explanations may be incomplete or incorrect and never override local
+  deterministic findings.
 - All findings and suggested changes must be reviewed by a qualified user.
 - The tool must not be used as the sole basis for reactor-safety or criticality-safety decisions.
 

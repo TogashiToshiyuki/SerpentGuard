@@ -44,10 +44,25 @@ LOCALIZED_FINDING_RULE_IDS = frozenset(
         "SG011",
         "SG014",
         "SG015",
+        "SG021",
+        "SG022",
+        "SG023",
+        "SG024",
+        "SG025",
+        "SG026",
+        "SG027",
     }
 )
 _LOCALIZED_PARSER_CODES = frozenset(
-    {"PARSER_IO", "PARSER_ENCODING", "PARSER001", "PARSER002", "PARSER003"}
+    {
+        "PARSER_IO",
+        "PARSER_ENCODING",
+        "PARSER001",
+        "PARSER002",
+        "PARSER003",
+        "PARSER004",
+        "PARSER005",
+    }
 )
 _REFERENCE_DIAGNOSTIC_KEYS = frozenset(
     {
@@ -98,6 +113,20 @@ def filter_findings(
         for finding in findings
         if finding.severity in severity_filter and finding.rule_id in rule_filter
     ]
+
+
+def ai_generation_requested(
+    *,
+    button_pressed: bool,
+    consent_confirmed: bool,
+    payload_available: bool,
+) -> bool:
+    """Gate a future AI action behind a visible payload and explicit user action.
+
+    This pure helper cannot invoke a client or perform network access.  The future API
+    milestone may use its return value as one of several safeguards.
+    """
+    return button_pressed and consent_confirmed and payload_available
 
 
 def findings_table_rows(findings: list[Finding]) -> list[dict[str, str]]:
@@ -151,7 +180,16 @@ def localized_object_label(
     if language == ENGLISH:
         return _format_object(object_type, object_name)
     localized_type = object_type
-    if object_type in {"surface", "cell", "material", "card", "comment", "input"}:
+    if object_type in {
+        "surface",
+        "cell",
+        "material",
+        "energy_grid",
+        "detector",
+        "card",
+        "comment",
+        "input",
+    }:
         localized_type = translate(f"object.{object_type}", language)
     return _format_object(localized_type, object_name)
 
@@ -343,7 +381,7 @@ def _finding_message_context(
     name = finding.object_name
     evidence = finding.evidence
 
-    if finding.rule_id in {"SG001", "SG002", "SG003"}:
+    if finding.rule_id in {"SG001", "SG002", "SG003", "SG021"}:
         definition_count = _integer(evidence.get("definition_count"))
         if name is None or definition_count is None:
             return None
@@ -430,6 +468,59 @@ def _finding_message_context(
             return None
         return f"finding.SG015.message.{parser_code}", {}
 
+    if finding.rule_id == "SG022":
+        reference = _text(evidence.get("reference"))
+        if name is None or reference is None:
+            return None
+        return "finding.SG022.message", {"detector": name, "reference": reference}
+
+    if finding.rule_id == "SG023":
+        option = _text(evidence.get("option"))
+        bin_count = _integer(evidence.get("bin_count"))
+        if name is None or option is None or bin_count is None:
+            return None
+        return (
+            "finding.SG023.message",
+            {"name": name, "option": option, "bin_count": bin_count},
+        )
+
+    if finding.rule_id == "SG024":
+        option = _text(evidence.get("option"))
+        minimum = _number(evidence.get("minimum"))
+        maximum = _number(evidence.get("maximum"))
+        if name is None or option is None or minimum is None or maximum is None:
+            return None
+        return (
+            "finding.SG024.message",
+            {
+                "name": name,
+                "option": option,
+                "minimum": minimum,
+                "maximum": maximum,
+            },
+        )
+
+    if finding.rule_id == "SG025":
+        total_bins = _integer(evidence.get("total_bin_count"))
+        threshold = _integer(evidence.get("threshold"))
+        if name is None or total_bins is None or threshold is None:
+            return None
+        return (
+            "finding.SG025.message",
+            {"name": name, "total_bins": total_bins, "threshold": threshold},
+        )
+
+    if finding.rule_id == "SG026":
+        if name is None:
+            return None
+        return "finding.SG026.message", {"name": name}
+
+    if finding.rule_id == "SG027":
+        option = _text(evidence.get("option"))
+        if name is None or option is None:
+            return None
+        return "finding.SG027.message", {"name": name, "option": option}
+
     return None
 
 
@@ -471,6 +562,12 @@ def _text(value: object) -> str | None:
 
 def _integer(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _number(value: object) -> int | float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
 
 
 def _remove_raw_text(value: Any) -> Any:

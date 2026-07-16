@@ -7,6 +7,16 @@ from functools import partial
 
 import streamlit as st
 
+from serpentguard.ai_payload import (
+    PayloadPrivacyError,
+    build_ai_review_payload,
+    payload_fingerprint,
+)
+from serpentguard.ai_review import (
+    AIExplanationResponse,
+    AIReviewServiceError,
+    generate_ai_explanation,
+)
 from serpentguard.analysis import analyze_model, has_unrecoverable_parse_failure
 from serpentguard.geometry import (
     DEFAULT_BOUNDARY_TOLERANCE,
@@ -39,7 +49,7 @@ from serpentguard.i18n import (
     language_display_name,
     translate,
 )
-from serpentguard.models import AnalysisReport, ParsedModel
+from serpentguard.models import AnalysisReport, Finding, ParsedModel
 from serpentguard.parser import parse_bytes
 from serpentguard.pbed_plot import (
     PbedSliceResult,
@@ -55,6 +65,7 @@ from serpentguard.references import (
 )
 from serpentguard.ui import (
     SEVERITY_ORDER,
+    ai_generation_requested,
     available_rule_ids,
     external_reference_table_rows,
     filter_findings,
@@ -80,6 +91,11 @@ _SOURCE_MODE_KEY = "serpentguard_source_mode"
 _PBED_TARGET_KEY = "serpentguard_pbed_target"
 _PBED_Z_KEY = "serpentguard_pbed_slice_z"
 _PBED_MODE_KEY = "serpentguard_pbed_view_mode"
+_AI_CONSENT_KEY = "serpentguard_ai_payload_consent"
+_AI_PAYLOAD_FINGERPRINT_KEY = "serpentguard_ai_payload_fingerprint"
+_AI_GENERATE_BUTTON_KEY = "serpentguard_ai_generate_button"
+_AI_RESPONSE_KEY = "serpentguard_ai_explanation_response"
+_AI_RESPONSE_FINGERPRINT_KEY = "serpentguard_ai_response_fingerprint"
 _MAX_PBED_PLOT_CIRCLES = 20_000
 _GEOMETRY_WIDGET_KEYS = (
     "serpentguard_geometry_universe",
@@ -104,8 +120,145 @@ def _clear_previous_result() -> None:
     st.session_state.pop(_PBED_MODE_KEY, None)
     st.session_state.pop(_SEVERITY_FILTER_KEY, None)
     st.session_state.pop(_RULE_FILTER_KEY, None)
+    _clear_ai_review_state()
     for key in _GEOMETRY_WIDGET_KEYS:
         st.session_state.pop(key, None)
+
+
+def _clear_ai_review_state() -> None:
+    """Clear consent whenever the canonical payload may have changed."""
+    st.session_state.pop(_AI_CONSENT_KEY, None)
+    st.session_state.pop(_AI_PAYLOAD_FINGERPRINT_KEY, None)
+    _clear_ai_generated_result()
+
+
+def _clear_ai_generated_result() -> None:
+    """Remove an explanation when its reviewed payload is no longer current."""
+    st.session_state.pop(_AI_RESPONSE_KEY, None)
+    st.session_state.pop(_AI_RESPONSE_FINGERPRINT_KEY, None)
+
+
+def _render_ai_explanation_result(
+    response: AIExplanationResponse,
+    t: Callable[..., str],
+) -> None:
+    """Render advisory structured output without changing local findings."""
+    st.warning(t("ai.result.advisory"))
+    st.markdown(f"### {t('ai.result.heading')}")
+    st.markdown(f"#### {t('ai.result.summary')}")
+    st.write(response.summary)
+    st.markdown(f"#### {t('ai.result.prioritized')}")
+    if response.prioritized_findings:
+        st.dataframe(
+            [
+                {
+                    t("ai.result.rule_id"): item.rule_id,
+                    t("ai.result.priority"): item.priority,
+                    t("ai.result.rationale"): item.rationale,
+                }
+                for item in response.prioritized_findings
+            ],
+            hide_index=True,
+        )
+    else:
+        st.info(t("ai.result.no_prioritized"))
+    st.markdown(f"#### {t('ai.result.explanation')}")
+    st.write(response.explanation)
+    st.markdown(f"#### {t('ai.result.suggested_checks')}")
+    for check in response.suggested_checks:
+        st.markdown(f"- {check}")
+    st.caption(t("ai.result.confidence", confidence=response.confidence))
+    st.markdown(f"#### {t('ai.result.limitations')}")
+    for limitation in response.limitations:
+        st.markdown(f"- {limitation}")
+
+
+def _render_ai_review(
+    result: object,
+    selected_findings: list[Finding] | None,
+    t: Callable[..., str],
+) -> None:
+    """Render a local-only payload preview and explicit future-send gate."""
+    parsed = result.get("parsed") if isinstance(result, dict) else None
+    report = result.get("report") if isinstance(result, dict) else None
+    purpose = result.get("analysis_purpose") if isinstance(result, dict) else ""
+    if not isinstance(parsed, ParsedModel) or not isinstance(report, AnalysisReport):
+        st.info(t("ai.placeholder"))
+        st.checkbox(t("ai.consent"), disabled=True, key=_AI_CONSENT_KEY)
+        st.button(
+            t("ai.generate"),
+            disabled=True,
+            help=t("ai.generate.help"),
+            key=_AI_GENERATE_BUTTON_KEY,
+        )
+        return
+
+    geometry = st.session_state.get(_GEOMETRY_RESULT_KEY)
+    geometry_result = geometry if isinstance(geometry, GeometrySamplingResult) else None
+    try:
+        payload = build_ai_review_payload(
+            analysis_purpose=purpose if isinstance(purpose, str) else "",
+            report=report,
+            parsed_model=parsed,
+            selected_findings=selected_findings or [],
+            geometry_result=geometry_result,
+        )
+    except (PayloadPrivacyError, ValueError):
+        _clear_ai_review_state()
+        st.error(t("ai.payload_error"))
+        st.checkbox(t("ai.consent"), disabled=True, key=_AI_CONSENT_KEY)
+        st.button(
+            t("ai.generate"),
+            disabled=True,
+            help=t("ai.generate.help"),
+            key=_AI_GENERATE_BUTTON_KEY,
+        )
+        return
+
+    fingerprint = payload_fingerprint(payload)
+    if st.session_state.get(_AI_PAYLOAD_FINGERPRINT_KEY) != fingerprint:
+        _clear_ai_generated_result()
+        st.session_state[_AI_PAYLOAD_FINGERPRINT_KEY] = fingerprint
+        st.session_state[_AI_CONSENT_KEY] = False
+
+    st.caption(t("ai.preview.caption"))
+    st.json(payload.model_dump(mode="json"))
+    st.caption(
+        t(
+            "ai.preview.findings",
+            included=payload.findings.included_count,
+            selected=payload.findings.selected_count,
+        )
+    )
+    consent_confirmed = st.checkbox(t("ai.consent"), key=_AI_CONSENT_KEY)
+    button_pressed = st.button(
+        t("ai.generate"),
+        disabled=not consent_confirmed,
+        help=None if consent_confirmed else t("ai.generate.help"),
+        key=_AI_GENERATE_BUTTON_KEY,
+    )
+    if ai_generation_requested(
+        button_pressed=button_pressed,
+        consent_confirmed=consent_confirmed,
+        payload_available=True,
+    ):
+        _clear_ai_generated_result()
+        try:
+            with st.spinner(t("ai.spinner")):
+                explanation = generate_ai_explanation(payload)
+        except AIReviewServiceError as error:
+            st.error(t(f"ai.error.{error.code}"))
+        else:
+            st.session_state[_AI_RESPONSE_KEY] = explanation
+            st.session_state[_AI_RESPONSE_FINGERPRINT_KEY] = fingerprint
+
+    stored_response = st.session_state.get(_AI_RESPONSE_KEY)
+    stored_fingerprint = st.session_state.get(_AI_RESPONSE_FINGERPRINT_KEY)
+    if (
+        isinstance(stored_response, AIExplanationResponse)
+        and stored_fingerprint == fingerprint
+    ):
+        _render_ai_explanation_result(stored_response, t)
 
 
 def _render_external_references(
@@ -797,6 +950,7 @@ if run_check:
             )
         )
     else:
+        _clear_ai_review_state()
         st.session_state.pop(_GEOMETRY_RESULT_KEY, None)
         st.session_state.pop(_PBED_SLICE_RESULT_KEY, None)
         st.session_state[_REFERENCE_RESULT_KEY] = reference_report
@@ -812,6 +966,7 @@ if run_check:
         }
 
 result = st.session_state.get(_RESULT_KEY)
+ai_selected_findings: list[Finding] | None = None
 
 st.subheader(t("section.summary"))
 if result is None:
@@ -830,13 +985,19 @@ else:
         ):
             st.error(t("summary.parser_recoverable"))
 
-        object_columns = st.columns(4)
+        object_columns = st.columns(6)
         object_columns[0].metric(t("metric.surfaces"), report.model_summary["surfaces"])
         object_columns[1].metric(t("metric.cells"), report.model_summary["cells"])
         object_columns[2].metric(
             t("metric.materials"), report.model_summary["materials"]
         )
         object_columns[3].metric(
+            t("metric.energy_grids"), report.model_summary["energy_grids"]
+        )
+        object_columns[4].metric(
+            t("metric.detectors"), report.model_summary["detectors"]
+        )
+        object_columns[5].metric(
             t("metric.unknown_cards"), report.model_summary["unknown_cards"]
         )
 
@@ -873,6 +1034,7 @@ elif isinstance(result.get("parsed"), ParsedModel) and isinstance(
         severities=selected_severities,
         rule_ids=selected_rule_ids,
     )
+    ai_selected_findings = filtered_findings
 
     if filtered_findings:
         st.dataframe(
@@ -929,4 +1091,4 @@ else:
     st.error(t("geometry.unavailable"))
 
 st.subheader(t("section.ai"))
-st.info(t("ai.placeholder"))
+_render_ai_review(result, ai_selected_findings, t)

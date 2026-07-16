@@ -8,6 +8,7 @@ from serpentguard.cli import main
 from serpentguard.parser import parse_bytes, parse_file, parse_text
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
+DETECTOR_FIXTURES = Path(__file__).parent / "fixtures" / "detectors"
 
 
 def test_valid_minimal_fixture() -> None:
@@ -147,6 +148,8 @@ def test_cli_check_prints_counts_without_raw_input(
     assert "Surfaces: 2" in output
     assert "Cells: 3" in output
     assert "Materials: 2" in output
+    assert "Energy grids: 0" in output
+    assert "Detectors: 0" in output
     assert "Unknown cards: 0" in output
     assert "92235.09c" not in output
 
@@ -168,3 +171,61 @@ def test_invalid_or_incomplete_material_rgb_is_not_fabricated(rgb: str) -> None:
     )
     assert not model.materials
     assert model.unknown_cards
+
+
+def test_supported_energy_grid_and_detector_options_are_structured() -> None:
+    model = parse_file(DETECTOR_FIXTURES / "valid_detector.inp")
+
+    assert len(model.energy_grids) == 1
+    grid = model.energy_grids[0]
+    assert (grid.name, grid.grid_type, grid.bin_count) == ("thermal", 3, 10)
+    assert (grid.minimum, grid.maximum) == (1.0e-9, 1.0e-6)
+    assert len(model.detectors) == 1
+    detector = model.detectors[0]
+    assert detector.name == "flux"
+    assert detector.particle == "n"
+    assert [item.name for item in detector.energy_grid_references] == ["thermal"]
+    assert [(item.axis, item.bin_count) for item in detector.mesh_axes] == [
+        ("x", 20),
+        ("y", 20),
+    ]
+    assert [(item.keyword, item.reason) for item in detector.unsupported_options] == [
+        ("dr", "unsupported")
+    ]
+    assert not model.diagnostics
+
+
+def test_type_one_energy_grid_accepts_descending_explicit_boundaries() -> None:
+    model = parse_text("ene broad 1 20.0 1.0 1.0E-9\n", file_name="ene.inp")
+    grid = model.energy_grids[0]
+
+    assert grid.grid_type == 1
+    assert grid.bin_count == 2
+    assert grid.boundaries == [20.0, 1.0, 1.0e-9]
+    assert grid.minimum == 1.0e-9
+    assert grid.maximum == 20.0
+
+
+def test_malformed_supported_detector_option_is_retained_and_reported() -> None:
+    model = parse_text(
+        "det mesh dx not-a-number 1.0 10 dr -1 void\n",
+        file_name="detector.inp",
+    )
+
+    assert len(model.detectors) == 1
+    assert [
+        (item.keyword, item.reason) for item in model.detectors[0].unsupported_options
+    ] == [
+        ("dx", "malformed"),
+        ("dr", "unsupported"),
+    ]
+    assert [item.code for item in model.diagnostics] == ["PARSER005"]
+    assert "not-a-number" not in model.diagnostics[0].message
+
+
+def test_unverified_energy_grid_type_remains_unknown() -> None:
+    model = parse_text("ene legacy 4 2\n", file_name="ene.inp")
+
+    assert not model.energy_grids
+    assert model.unknown_cards[0].keyword == "ene"
+    assert model.diagnostics[0].code == "SG014"

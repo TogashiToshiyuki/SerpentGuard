@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai = [
-    "openai>=2,<3",
+    "openai>=2.45,<3",
 ]
 dev = [
     "build>=1.2,<2",

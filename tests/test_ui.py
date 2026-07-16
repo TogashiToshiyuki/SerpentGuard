@@ -309,7 +309,8 @@ def test_geometry_presentation_rows_are_bilingual_and_structured() -> None:
 
 
 def test_localized_rule_set_matches_current_analyzer_rules() -> None:
-    assert LOCALIZED_FINDING_RULE_IDS == frozenset(_rule_findings())
+    expected = set(_rule_findings()) | set(_detector_rule_findings())
+    assert LOCALIZED_FINDING_RULE_IDS == frozenset(expected)
 
 
 def _rule_findings() -> dict[str, Finding]:
@@ -436,6 +437,106 @@ def _rule_findings() -> dict[str, Finding]:
             "object_type": "card",
             "object_name": "surf",
             "evidence": {"parser_code": "PARSER001", "recoverable": True},
+        },
+    }
+    return {
+        rule_id: Finding.model_validate({"rule_id": rule_id, **common, **definition})
+        for rule_id, definition in definitions.items()
+    }
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "title_fragment", "message_fragment"),
+    [
+        ("SG021", "Detectorの重複定義", "2回"),
+        ("SG022", "未定義Energy grid参照", "missing_grid"),
+        ("SG023", "正でないビン数", "-1"),
+        ("SG024", "無効なビン範囲", "最大値1.0"),
+        ("SG025", "極端に多いDetectorビン", "1000001"),
+        ("SG026", "Detector範囲が体系境界外", "remote"),
+        ("SG027", "未対応Detectorオプション", "dr"),
+    ],
+)
+def test_detector_findings_have_structured_japanese_rendering(
+    rule_id: str,
+    title_fragment: str,
+    message_fragment: str,
+) -> None:
+    finding = _detector_rule_findings()[rule_id]
+    rendered = (
+        localized_finding_title(finding, JAPANESE)
+        + " "
+        + localized_finding_message(finding, JAPANESE)
+    )
+
+    assert title_fragment in rendered
+    assert message_fragment in rendered
+    assert "日本語訳未対応" not in rendered
+
+
+def _detector_rule_findings() -> dict[str, Finding]:
+    common = {
+        "file": "detectors.inp",
+        "line": 4,
+        "line_end": 4,
+        "confidence": "high",
+    }
+    definitions = {
+        "SG021": {
+            "severity": "ERROR",
+            "title": "Duplicate detector",
+            "message": "English duplicate message.",
+            "object_type": "detector",
+            "object_name": "score",
+            "evidence": {"definition_count": 2},
+        },
+        "SG022": {
+            "severity": "ERROR",
+            "title": "Undefined detector energy-grid reference",
+            "message": "English reference message.",
+            "object_type": "detector",
+            "object_name": "spectrum",
+            "evidence": {"reference": "missing_grid"},
+        },
+        "SG023": {
+            "severity": "ERROR",
+            "title": "Non-positive bin count",
+            "message": "English bin count message.",
+            "object_type": "detector",
+            "object_name": "mesh",
+            "evidence": {"option": "dx", "bin_count": -1},
+        },
+        "SG024": {
+            "severity": "ERROR",
+            "title": "Invalid bin range",
+            "message": "English bounds message.",
+            "object_type": "detector",
+            "object_name": "mesh",
+            "evidence": {"option": "dy", "minimum": 2.0, "maximum": 1.0},
+        },
+        "SG025": {
+            "severity": "REVIEW",
+            "title": "Extreme detector bin count",
+            "message": "English total message.",
+            "object_type": "detector",
+            "object_name": "large",
+            "evidence": {"total_bin_count": 1000001, "threshold": 1000000},
+        },
+        "SG026": {
+            "severity": "REVIEW",
+            "title": "Detector extent outside available geometry bounds",
+            "message": "English extent message.",
+            "object_type": "detector",
+            "object_name": "remote",
+            "evidence": {},
+        },
+        "SG027": {
+            "severity": "INFO",
+            "title": "Unsupported detector option",
+            "message": "English option message.",
+            "object_type": "detector",
+            "object_name": "score",
+            "evidence": {"option": "dr"},
         },
     }
     return {

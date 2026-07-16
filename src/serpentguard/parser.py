@@ -10,6 +10,11 @@ from typing import Literal
 
 from serpentguard.models import (
     Cell,
+    Detector,
+    DetectorEnergyGridReference,
+    DetectorMeshAxis,
+    DetectorUnsupportedOption,
+    EnergyGrid,
     Material,
     MaterialComponent,
     ParsedModel,
@@ -78,6 +83,37 @@ KNOWN_CARD_KEYWORDS = frozenset(
 _SUPPORTED_SURFACE_TYPES = frozenset({"cyl", "sqc"})
 _UNSUPPORTED_REGION_CHARACTERS = frozenset("()#")
 _ZAID_PATTERN = re.compile(r"^\d+\.[A-Za-z0-9]+$")
+_INTEGER_PATTERN = re.compile(r"^[+-]?\d+$")
+_DETECTOR_PARTICLES = frozenset({"n", "p", "g"})
+_DETECTOR_OPTION_KEYWORDS = frozenset(
+    {
+        "da",
+        "dc",
+        "de",
+        "df",
+        "dfet",
+        "dfl",
+        "dh",
+        "dhis",
+        "di",
+        "dl",
+        "dm",
+        "dmesh",
+        "dn",
+        "dphb",
+        "dr",
+        "ds",
+        "dt",
+        "dtl",
+        "du",
+        "dumsh",
+        "dv",
+        "dx",
+        "dy",
+        "dz",
+    }
+)
+_SUPPORTED_DETECTOR_OPTIONS = frozenset({"de", "dx", "dy", "dz"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +171,10 @@ def parse_text(text: str, *, file_name: str = "<memory>") -> ParsedModel:
             _parse_cell(span, source, result)
         elif span.keyword == "mat":
             _parse_material(span, source, result)
+        elif span.keyword == "ene":
+            _parse_energy_grid(span, source, result)
+        elif span.keyword == "det":
+            _parse_detector(span, source, result)
         else:
             _retain_unknown(span, source, result)
 
@@ -427,6 +467,217 @@ def _parse_material(
     )
 
 
+def _parse_energy_grid(
+    span: _CardSpan,
+    source: PreprocessedSource,
+    result: ParsedModel,
+) -> None:
+    tokens = _flatten_tokens(span)
+    if len(tokens) < 3:
+        _retain_malformed(
+            span,
+            source,
+            result,
+            code="PARSER004",
+            message="A supported ene card requires a name and grid type.",
+        )
+        return
+
+    grid_type = _parse_integer(tokens[2])
+    if grid_type is None:
+        _retain_malformed(
+            span,
+            source,
+            result,
+            code="PARSER004",
+            message="A supported ene card contains a malformed grid type.",
+        )
+        return
+    if grid_type not in {1, 2, 3}:
+        _retain_unknown(span, source, result)
+        return
+
+    if grid_type == 1:
+        boundaries = _parse_finite_numbers(tokens[3:])
+        if boundaries is None:
+            _retain_malformed(
+                span,
+                source,
+                result,
+                code="PARSER004",
+                message="A supported type-1 ene card has a malformed boundary.",
+            )
+            return
+        minimum = min(boundaries) if len(boundaries) >= 2 else None
+        maximum = max(boundaries) if len(boundaries) >= 2 else None
+        result.energy_grids.append(
+            EnergyGrid(
+                name=tokens[1],
+                grid_type=1,
+                bin_count=max(len(boundaries) - 1, 0),
+                boundaries=boundaries,
+                minimum=minimum,
+                maximum=maximum,
+                location=_span_location(span, source),
+                raw_text=span.raw_text,
+            )
+        )
+        return
+
+    if len(tokens) != 6:
+        _retain_malformed(
+            span,
+            source,
+            result,
+            code="PARSER004",
+            message=(
+                "A supported type-2 or type-3 ene card requires a bin count, "
+                "minimum, and maximum."
+            ),
+        )
+        return
+    bin_count = _parse_integer(tokens[3])
+    limits = _parse_finite_numbers(tokens[4:])
+    if bin_count is None or limits is None:
+        _retain_malformed(
+            span,
+            source,
+            result,
+            code="PARSER004",
+            message="A supported ene card contains a malformed numeric parameter.",
+        )
+        return
+    result.energy_grids.append(
+        EnergyGrid(
+            name=tokens[1],
+            grid_type=grid_type,
+            bin_count=bin_count,
+            minimum=limits[0],
+            maximum=limits[1],
+            location=_span_location(span, source),
+            raw_text=span.raw_text,
+        )
+    )
+
+
+def _parse_detector(
+    span: _CardSpan,
+    source: PreprocessedSource,
+    result: ParsedModel,
+) -> None:
+    stream = _span_token_stream(span)
+    if len(stream) < 2:
+        _retain_malformed(
+            span,
+            source,
+            result,
+            code="PARSER005",
+            message="A supported det card requires a detector name.",
+        )
+        return
+
+    name = stream[1][0]
+    cursor = 2
+    particle: Literal["n", "p", "g"] | None = None
+    if cursor < len(stream) and stream[cursor][0].lower() in _DETECTOR_PARTICLES:
+        particle = stream[cursor][0].lower()  # type: ignore[assignment]
+        cursor += 1
+
+    references: list[DetectorEnergyGridReference] = []
+    axes: list[DetectorMeshAxis] = []
+    unsupported: list[DetectorUnsupportedOption] = []
+    seen_selected: set[str] = set()
+    while cursor < len(stream):
+        end = cursor + 1
+        while (
+            end < len(stream)
+            and stream[end][0].lower() not in _DETECTOR_OPTION_KEYWORDS
+        ):
+            end += 1
+        option_tokens = [token for token, _ in stream[cursor:end]]
+        keyword = option_tokens[0].lower()
+        location = _line_location(stream[cursor][1], source)
+        cursor = end
+
+        if keyword not in _SUPPORTED_DETECTOR_OPTIONS:
+            unsupported.append(
+                DetectorUnsupportedOption(
+                    keyword=keyword,
+                    tokens=option_tokens,
+                    reason="unsupported",
+                    location=location,
+                )
+            )
+            continue
+        if keyword in seen_selected:
+            unsupported.append(
+                DetectorUnsupportedOption(
+                    keyword=keyword,
+                    tokens=option_tokens,
+                    reason="duplicate",
+                    location=location,
+                )
+            )
+            continue
+        seen_selected.add(keyword)
+
+        if keyword == "de" and len(option_tokens) == 2:
+            references.append(
+                DetectorEnergyGridReference(
+                    name=option_tokens[1],
+                    location=location,
+                )
+            )
+            continue
+        if keyword in {"dx", "dy", "dz"} and len(option_tokens) == 4:
+            limits = _parse_finite_numbers(option_tokens[1:3])
+            bin_count = _parse_integer(option_tokens[3])
+            if limits is not None and bin_count is not None:
+                axes.append(
+                    DetectorMeshAxis(
+                        axis=keyword[1],  # type: ignore[arg-type]
+                        minimum=limits[0],
+                        maximum=limits[1],
+                        bin_count=bin_count,
+                        location=location,
+                    )
+                )
+                continue
+
+        unsupported.append(
+            DetectorUnsupportedOption(
+                keyword=keyword,
+                tokens=option_tokens,
+                reason="malformed",
+                location=location,
+            )
+        )
+        result.diagnostics.append(
+            ParserDiagnostic(
+                code="PARSER005",
+                severity="ERROR",
+                message=(
+                    f"Detector option '{keyword}' is malformed for the supported "
+                    "limited form."
+                ),
+                location=location,
+                card_keyword="det",
+            )
+        )
+
+    result.detectors.append(
+        Detector(
+            name=name,
+            particle=particle,
+            energy_grid_references=references,
+            mesh_axes=axes,
+            unsupported_options=unsupported,
+            location=_span_location(span, source),
+            raw_text=span.raw_text,
+        )
+    )
+
+
 def _parse_intersection_terms(region_tokens: list[str]) -> list[list[str]] | None:
     expression = " ".join(region_tokens)
     if any(character in expression for character in _UNSUPPORTED_REGION_CHARACTERS):
@@ -455,6 +706,12 @@ def _parse_finite_numbers(tokens: list[str]) -> list[float] | None:
     if not all(math.isfinite(value) for value in values):
         return None
     return values
+
+
+def _parse_integer(token: str) -> int | None:
+    if _INTEGER_PATTERN.fullmatch(token) is None:
+        return None
+    return int(token)
 
 
 def _parse_rgb_channels(tokens: list[str]) -> tuple[int, int, int] | None:
@@ -548,6 +805,14 @@ def _line_location(line_index: int, source: PreprocessedSource) -> SourceLocatio
 
 def _flatten_tokens(span: _CardSpan) -> list[str]:
     return [token for line in span.cleaned_lines for token in line.split()]
+
+
+def _span_token_stream(span: _CardSpan) -> list[tuple[str, int]]:
+    return [
+        (token, span.start_index + relative_index)
+        for relative_index, line in enumerate(span.cleaned_lines)
+        for token in line.split()
+    ]
 
 
 def _first_token(line: str) -> str | None:

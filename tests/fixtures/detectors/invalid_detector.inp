@@ -1,0 +1,5 @@
+% Synthetic invalid detector fixture; each issue is intentional.
+ene reversed 2 0 10.0 1.0
+
+det duplicate de missing dx 2.0 -2.0 0
+det duplicate de reversed

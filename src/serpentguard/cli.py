@@ -37,6 +37,8 @@ def _print_text_report(input_file: Path, report: AnalysisReport) -> None:
     print(f"Surfaces: {summary['surfaces']}")
     print(f"Cells: {summary['cells']}")
     print(f"Materials: {summary['materials']}")
+    print(f"Energy grids: {summary['energy_grids']}")
+    print(f"Detectors: {summary['detectors']}")
     print(f"Unknown cards: {summary['unknown_cards']}")
     print(f"Findings: {len(report.findings)}")
 
@@ -83,8 +85,8 @@ def build_parser() -> argparse.ArgumentParser:
         "check",
         help="Parse and statically analyze a local input file.",
         description=(
-            "Parse one local file and run deterministic symbol-table checks. "
-            "Geometry, detector, and AI analysis are not performed."
+            "Parse one local file and run deterministic symbol-table and limited "
+            "detector checks. Geometry sampling and AI analysis are not performed."
         ),
     )
     check_parser.add_argument(
