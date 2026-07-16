@@ -1,0 +1,17 @@
+% Demo purpose: establish the clean deterministic-analysis path.
+% Expected findings: none.
+% Geometry settings: not required for this demo step.
+% Scope: independently written, simplified, and not a production reactor model.
+
+surf fuel_boundary cyl 0.0 0.0 0.40
+surf system_boundary sqc 0.0 0.0 0.65
+
+cell fuel_cell 0 fuel -fuel_boundary
+cell coolant_cell 0 coolant fuel_boundary -system_boundary
+cell outside_cell 0 outside system_boundary
+
+mat fuel -10.0
+92235.09c -1.0
+
+mat coolant -0.7
+1001.09c -2.0

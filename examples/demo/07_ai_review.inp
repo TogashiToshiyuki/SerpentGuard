@@ -1,0 +1,16 @@
+% Demo purpose: create a compact structured payload for optional AI explanation.
+% Expected findings: SG004 ERROR, SG007 INFO, and SG014 INFO.
+% Geometry settings: not required; use purpose shown in examples/demo/README.md.
+% Scope: independently written, simplified, and not a production reactor model.
+
+surf known_boundary cyl 0.0 0.0 0.40
+
+cell review_cell 0 fuel -known_boundary missing_boundary
+
+mat fuel -10.0
+92235.09c -1.0
+
+mat reserved_material -1.0
+1001.09c -1.0
+
+set bc 2

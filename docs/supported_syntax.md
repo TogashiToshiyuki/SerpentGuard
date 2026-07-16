@@ -1,11 +1,14 @@
-# First parser syntax boundary
+# Supported syntax
 
 ## Status
 
 The deterministic parser and first symbol-table milestone are implemented. The parser
 deliberately covers less than Serpent and must not be described as general Serpent
 input support. Parsing, static checks, and the optional XY geometry sampler are local
-and offline; no detector, physics, or AI analysis occurs.
+and offline. Limited detector/energy-grid parsing and checks are implemented. The
+optional AI service can explain only a reviewed structured payload after consent; it
+does not parse input or change deterministic results. No transport-physics analysis
+occurs.
 
 ## Input and lexical behavior
 
@@ -263,10 +266,10 @@ file content.
 
 The scanner uses a frozen first-milestone list of known Serpent card keywords to find
 the next card boundary. This is a pragmatic boundary mechanism, not a complete Serpent
-lexer. Reserved cards outside the supported subset, including `include`, `det`, `ene`,
-`set`, `pin`, and `lat`, are retained as `UnknownCard` with raw local span, tokens,
-location, and `SG014 INFO`. An otherwise unrecognized line-start token is also retained
-as a one-line unknown card.
+lexer. Supported `det` and `ene` cards use only the narrow forms above. Reserved cards
+outside the supported subset, including `include`, `set`, `pin`, and `lat`, are
+retained as `UnknownCard` with raw local span, tokens, location, and `SG014 INFO`. An
+otherwise unrecognized line-start token is also retained as a one-line unknown card.
 
 Include cards remain unopened. Prompt 6B resolves only verified `pbed` external
 placement files through the explicit uploaded-bundle or authorized-root policy.
@@ -281,13 +284,15 @@ placement files through the explicit uploaded-bundle or authorized-root policy.
 - Universe expansion or placement: a selected Universe is evaluated only in its own
   local coordinates.
 - Parenthesized grouping and cell complements.
-- Detector and energy-grid parsing.
+- Detector options and energy-grid forms beyond the explicitly documented subset;
+  detector response physics and purpose-dependent judgment.
 - Material options and full nuclide alias syntax.
 - Surface types other than `cyl` and `sqc`.
 - Surface geometry beyond `cyl` and `sqc`, lattice or universe expansion,
   transformations, cell complements, nested Boolean grouping, and 3D visualization.
 - Quoted-string-aware comment handling.
-- AI calls or explanations.
+- Automatic AI calls, raw-input transmission, AI-based deterministic rules, input
+  rewriting, and any AI claim of complete physical validation.
 
 ## Open questions for later milestones
 

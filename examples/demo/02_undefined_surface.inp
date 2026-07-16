@@ -1,0 +1,12 @@
+% Demo purpose: show a source-located undefined Surface reference.
+% Expected findings: SG004 ERROR for missing_boundary.
+% Geometry settings: not required; the incomplete Cell is excluded if sampled.
+% Scope: independently written, simplified, and not a production reactor model.
+
+surf system_boundary sqc 0.0 0.0 0.65
+
+cell fuel_cell 0 fuel -missing_boundary -system_boundary
+cell outside_cell 0 outside system_boundary
+
+mat fuel -10.0
+92235.09c -1.0

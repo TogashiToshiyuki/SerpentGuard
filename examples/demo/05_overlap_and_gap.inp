@@ -1,0 +1,18 @@
+% Demo purpose: show distinct supported overlap and undefined-region candidates.
+% Expected findings: no static findings; both candidate counts are positive after sampling.
+% Geometry settings: Universe 0; x/y=[-0.8,0.8]; resolution 121.
+% Scope: independently written, simplified, and not a production reactor model.
+
+surf left_boundary cyl -0.25 0.0 0.55
+surf right_boundary cyl 0.25 0.0 0.55
+surf system_boundary sqc 0.0 0.0 0.75
+
+cell left_cell 0 left_material -left_boundary -system_boundary
+cell right_cell 0 right_material -right_boundary -system_boundary
+cell exterior_cell 0 outside system_boundary
+
+mat left_material -1.0
+1001.09c -1.0
+
+mat right_material -1.0
+8016.09c -1.0

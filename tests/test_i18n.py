@@ -29,6 +29,8 @@ def test_representative_static_ui_translation() -> None:
         "アップロードしたファイル一式"
     )
     assert translate("reference.status.resolved", JAPANESE) == "解決済み"
+    assert translate("ai.level.medium", ENGLISH) == "Medium"
+    assert translate("ai.level.medium", JAPANESE) == "中"
 
 
 def test_all_literal_app_translation_keys_exist_in_english() -> None:

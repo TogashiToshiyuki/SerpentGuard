@@ -71,6 +71,13 @@ questions, and full corrected input files. Structured response validation requir
 `summary`, `prioritized_findings`, `explanation`, `suggested_checks`, `confidence`, and
 `limitations`; prioritized rule IDs not present in the payload are rejected.
 
+The selected Streamlit interface language adds only a controlled response-language
+instruction: English requests English output and Japanese requests natural technical
+Japanese. This does not add a field to `AIReviewPayload`, expose user data, or weaken
+the fixed safety requirements. Switching languages never sends a request. An existing
+response is shown only in the language in which it was generated; generating another
+language still requires the visible consent gate and an explicit button press.
+
 The optional client reads `OPENAI_API_KEY` and `SERPENTGUARD_OPENAI_MODEL` from the
 process environment only when the user presses Generate. No model name is hard-coded.
 `SERPENTGUARD_OPENAI_TIMEOUT_SECONDS` may set a bounded timeout. Keys are never placed

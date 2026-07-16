@@ -84,8 +84,12 @@ streamlit run app.py
 
 The equivalent module command is `python -m streamlit run app.py`.
 
+For the complete public-demo sequence, use only the synthetic fixtures under
+[`examples/demo/`](examples/demo/) and follow the timed
+[`docs/demo_script.md`](docs/demo_script.md) walkthrough.
+
 For a redistributable geometry demo, upload
-`tests/fixtures/geometry/pwr_pin_cell.inp`, run the deterministic check, sample
+`examples/demo/04_pwr_pin_cell.inp`, run the deterministic check, sample
 Universe `0` over approximately `x,y = [-0.75, 0.75]`, and open the Geometry view.
 The fixture is independently written and is not a production reactor model.
 
@@ -98,6 +102,9 @@ The interface supports English and Japanese (`日本語`), with English as the d
 Use the language selector above the page title to switch languages. Switching redraws
 presentation text only: uploaded files, canonical findings, parsed results, and active
 finding filters are preserved, and deterministic analysis is not rerun automatically.
+When Generate is explicitly pressed, the optional AI response is requested in the
+currently selected interface language. This language instruction does not alter the
+previewed payload or weaken its fixed safety requirements.
 
 Choose one input mode at the top of the application:
 
@@ -202,6 +209,9 @@ pre-commit install
 - [External-reference and PBED architecture](docs/external_references.md)
 - [Localization architecture](docs/localization.md)
 - [Privacy policy](docs/privacy.md)
+- [Architecture](docs/architecture.md)
+- [Three-minute demo script](docs/demo_script.md)
+- [Release-readiness and Devpost checklist](docs/release_readiness.md)
 - [Example-file policy](examples/README.md)
 
 ## Privacy and local files

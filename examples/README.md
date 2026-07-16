@@ -12,6 +12,10 @@ This directory contains small, independently written SerpentGuard fixtures. They
 | `contradictory_cell.inp` | Uses both signs of one surface in an implicit intersection. | SG008 WARNING. |
 | `unknown_card.inp` | Uses an official `set` card that milestone one does not support. | SG014 INFO; raw card preserved |
 
+The [`demo/`](demo/) subdirectory contains the self-documenting synthetic sequence
+used by the three-minute hackathon walkthrough, including PWR geometry, diagnostic,
+detector, and optional AI-payload cases.
+
 Each fixture header records its source inspiration, intentional simplification, and expected finding. See [the source review](../docs/example_sources.md) and [syntax boundary](../docs/supported_syntax.md).
 
 ## Contribution policy

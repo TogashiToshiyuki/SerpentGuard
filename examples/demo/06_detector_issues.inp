@@ -1,0 +1,9 @@
+% Demo purpose: show limited deterministic Detector and Energy-grid checks.
+% Expected findings: SG021, SG022, SG023, and SG024 ERROR findings.
+% Geometry settings: not required for this demo step.
+% Scope: independently written, simplified, and not a production reactor model.
+
+ene reversed_grid 2 0 10.0 1.0
+
+det flux_detector de missing_grid dx 2.0 -2.0 0
+det flux_detector de reversed_grid

@@ -5,7 +5,9 @@
 SerpentGuard performs deterministic preprocessing, limited syntactic parsing,
 symbol-table analysis, limited detector/energy-grid checks, and user-triggered XY
 geometry sampling of the supported parsed model. It does not perform detector-purpose
-review, response physics validation, or AI analysis.
+review or response physics validation. An optional consent-gated AI service can
+explain the already-produced structured findings, but it does not create, suppress,
+or change deterministic findings.
 
 Findings use only `ERROR`, `WARNING`, `REVIEW`, or `INFO`. Each structured finding
 contains a rule ID, title, message, source file and line when available, object type and
@@ -207,7 +209,8 @@ serpentguard check examples/valid_minimal.inp --format json
 - Detector responses, time bins, non-Cartesian meshes, transformations, statistics,
   normalization, and purpose-dependent review.
 - Material physics, normalization, temperature, depletion, or purpose-dependent review.
-- AI calls or explanations.
+- AI-based detector judgment, AI-generated deterministic findings, automatic calls,
+  and corrected-input generation.
 
 See [supported syntax](supported_syntax.md) for the parser boundary and the
 [canonical specification](../serpentguard_implementation_spec.md) for the long-term

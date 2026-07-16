@@ -96,6 +96,7 @@ _AI_PAYLOAD_FINGERPRINT_KEY = "serpentguard_ai_payload_fingerprint"
 _AI_GENERATE_BUTTON_KEY = "serpentguard_ai_generate_button"
 _AI_RESPONSE_KEY = "serpentguard_ai_explanation_response"
 _AI_RESPONSE_FINGERPRINT_KEY = "serpentguard_ai_response_fingerprint"
+_AI_RESPONSE_LANGUAGE_KEY = "serpentguard_ai_response_language"
 _MAX_PBED_PLOT_CIRCLES = 20_000
 _GEOMETRY_WIDGET_KEYS = (
     "serpentguard_geometry_universe",
@@ -136,6 +137,7 @@ def _clear_ai_generated_result() -> None:
     """Remove an explanation when its reviewed payload is no longer current."""
     st.session_state.pop(_AI_RESPONSE_KEY, None)
     st.session_state.pop(_AI_RESPONSE_FINGERPRINT_KEY, None)
+    st.session_state.pop(_AI_RESPONSE_LANGUAGE_KEY, None)
 
 
 def _render_ai_explanation_result(
@@ -153,7 +155,7 @@ def _render_ai_explanation_result(
             [
                 {
                     t("ai.result.rule_id"): item.rule_id,
-                    t("ai.result.priority"): item.priority,
+                    t("ai.result.priority"): t(f"ai.level.{item.priority}"),
                     t("ai.result.rationale"): item.rationale,
                 }
                 for item in response.prioritized_findings
@@ -167,7 +169,12 @@ def _render_ai_explanation_result(
     st.markdown(f"#### {t('ai.result.suggested_checks')}")
     for check in response.suggested_checks:
         st.markdown(f"- {check}")
-    st.caption(t("ai.result.confidence", confidence=response.confidence))
+    st.caption(
+        t(
+            "ai.result.confidence",
+            confidence=t(f"ai.level.{response.confidence}"),
+        )
+    )
     st.markdown(f"#### {t('ai.result.limitations')}")
     for limitation in response.limitations:
         st.markdown(f"- {limitation}")
@@ -176,6 +183,7 @@ def _render_ai_explanation_result(
 def _render_ai_review(
     result: object,
     selected_findings: list[Finding] | None,
+    language: SupportedLanguage,
     t: Callable[..., str],
 ) -> None:
     """Render a local-only payload preview and explicit future-send gate."""
@@ -222,6 +230,7 @@ def _render_ai_review(
         st.session_state[_AI_CONSENT_KEY] = False
 
     st.caption(t("ai.preview.caption"))
+    st.caption(t("ai.language.caption"))
     st.json(payload.model_dump(mode="json"))
     st.caption(
         t(
@@ -245,18 +254,21 @@ def _render_ai_review(
         _clear_ai_generated_result()
         try:
             with st.spinner(t("ai.spinner")):
-                explanation = generate_ai_explanation(payload)
+                explanation = generate_ai_explanation(payload, language=language)
         except AIReviewServiceError as error:
             st.error(t(f"ai.error.{error.code}"))
         else:
             st.session_state[_AI_RESPONSE_KEY] = explanation
             st.session_state[_AI_RESPONSE_FINGERPRINT_KEY] = fingerprint
+            st.session_state[_AI_RESPONSE_LANGUAGE_KEY] = language
 
     stored_response = st.session_state.get(_AI_RESPONSE_KEY)
     stored_fingerprint = st.session_state.get(_AI_RESPONSE_FINGERPRINT_KEY)
+    stored_language = st.session_state.get(_AI_RESPONSE_LANGUAGE_KEY)
     if (
         isinstance(stored_response, AIExplanationResponse)
         and stored_fingerprint == fingerprint
+        and stored_language == language
     ):
         _render_ai_explanation_result(stored_response, t)
 
@@ -851,6 +863,7 @@ t = partial(translate, language=language)
 st.title(t("app.title"))
 st.warning(t("app.warning"))
 st.info(t("app.local_notice"))
+st.caption(t("app.workflow"))
 
 st.subheader(t("section.upload"))
 source_mode = st.radio(
@@ -1040,6 +1053,7 @@ elif isinstance(result.get("parsed"), ParsedModel) and isinstance(
         st.dataframe(
             localized_findings_table_rows(filtered_findings, language),
             hide_index=True,
+            use_container_width=True,
         )
         st.caption(
             t(
@@ -1091,4 +1105,4 @@ else:
     st.error(t("geometry.unavailable"))
 
 st.subheader(t("section.ai"))
-_render_ai_review(result, ai_selected_findings, t)
+_render_ai_review(result, ai_selected_findings, language, t)

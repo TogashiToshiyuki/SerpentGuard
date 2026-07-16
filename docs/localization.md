@@ -50,6 +50,12 @@ headings, authorization wording, bounding-box captions, and placement-visualizat
 warnings are localized only when rendered. Language switching neither reopens a local
 file nor reruns PBED parsing.
 
+Optional AI explanations follow the language selected when Generate is explicitly
+pressed. The selected language changes only a controlled system-level output-language
+instruction; it does not modify the reviewed `AIReviewPayload` JSON or its privacy
+fingerprint. The fixed AI safety instruction remains identical in both languages, and
+language switching alone never makes a network request.
+
 Matplotlib uses a separate runtime font check. Japanese mode validates required glyphs
 in installed platform fonts and never downloads or bundles font files. If none passes,
 the surrounding Streamlit UI remains Japanese, an actionable warning is shown, and

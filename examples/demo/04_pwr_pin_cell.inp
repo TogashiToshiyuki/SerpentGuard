@@ -1,0 +1,22 @@
+% Demo purpose: show fuel, cladding, coolant, and outside geometry categories.
+% Expected findings: none; Geometry view shows three materials plus outside.
+% Geometry settings: Universe 0; x/y=[-0.75,0.75]; resolution 121.
+% Scope: independently written, simplified, and not a production reactor model.
+
+surf fuel_boundary cyl 0.0 0.0 0.40
+surf clad_boundary cyl 0.0 0.0 0.46
+surf pin_boundary sqc 0.0 0.0 0.65
+
+cell fuel_cell 0 fuel -fuel_boundary
+cell clad_cell 0 clad fuel_boundary -clad_boundary
+cell coolant_cell 0 coolant clad_boundary -pin_boundary
+cell exterior_cell 0 outside pin_boundary
+
+mat fuel -10.0 rgb 220 55 35
+92235.09c -1.0
+
+mat clad -6.5 rgb 150 155 165
+40000.09c -1.0
+
+mat coolant -0.7 rgb 55 135 220
+1001.09c -2.0

@@ -49,6 +49,11 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "Deterministic analysis is local. Raw uploaded input is never sent to AI; "
             "only the visible sanitized JSON may be sent after explicit consent."
         ),
+        "app.workflow": (
+            "Workflow: choose a source → run the local check → review and filter "
+            "findings → sample one Universe → optionally preview and send the "
+            "sanitized AI payload."
+        ),
         "section.upload": "1. Upload Serpent input",
         "section.purpose": "2. Analysis purpose",
         "section.run": "3. Run check",
@@ -306,6 +311,10 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "This is the only JSON eligible for a future AI explanation. Raw input, "
             "comments, material composition, absolute paths, and secrets are excluded."
         ),
+        "ai.language.caption": (
+            "If generated, the AI response is requested in the current interface "
+            "language. Changing language never sends a request automatically."
+        ),
         "ai.preview.findings": (
             "The preview contains {included} of {selected} findings selected by the "
             "current filters."
@@ -332,6 +341,9 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "ai.result.rule_id": "Rule ID",
         "ai.result.priority": "Priority",
         "ai.result.rationale": "Rationale",
+        "ai.level.high": "High",
+        "ai.level.medium": "Medium",
+        "ai.level.low": "Low",
         "ai.result.no_prioritized": "The AI response prioritized no findings.",
         "ai.result.explanation": "Explanation",
         "ai.result.suggested_checks": "Suggested checks",
@@ -527,6 +539,11 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "app.local_notice": (
             "決定論的解析はローカルで実行されます．アップロードした生入力はAIへ送信"
             "されず，明示的な同意後に表示中のsanitized JSONだけを送信できます．"
+        ),
+        "app.workflow": (
+            "操作手順：入力元を選択 → ローカル検査を実行 → 検出事項を確認・絞込み → "
+            "1つのUniverseをサンプリング → 必要な場合だけサニタイズ済みAI payloadを"
+            "確認して送信します．"
         ),
         "section.upload": "1. Serpent入力のアップロード",
         "section.purpose": "2. 解析目的",
@@ -779,6 +796,10 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
             "将来AIによる説明へ送信できるJSONは，ここに表示するものだけです．生の入力，"
             "コメント，Material組成，絶対パス，秘密情報は含まれません．"
         ),
+        "ai.language.caption": (
+            "生成時は現在の表示言語でAI応答を要求します．言語を切り替えても，"
+            "API要求が自動送信されることはありません．"
+        ),
         "ai.preview.findings": (
             "現在のフィルターで選択された{selected}件の検出事項のうち，{included}件を"
             "プレビューに含めています．"
@@ -806,6 +827,9 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         "ai.result.rule_id": "ルールID",
         "ai.result.priority": "優先度",
         "ai.result.rationale": "理由",
+        "ai.level.high": "高",
+        "ai.level.medium": "中",
+        "ai.level.low": "低",
         "ai.result.no_prioritized": (
             "AI応答で優先対象に指定された検出事項はありません．"
         ),

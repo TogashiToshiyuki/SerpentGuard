@@ -17,6 +17,7 @@ from serpentguard.ai_review import (
     AIPrioritizedFinding,
     AIReviewServiceError,
     OpenAIReviewConfig,
+    build_ai_review_system_instruction,
     generate_ai_explanation,
     load_openai_review_config,
 )
@@ -72,7 +73,7 @@ def _explanation(*, rule_id: str = "SG006") -> AIExplanationResponse:
 def _config() -> OpenAIReviewConfig:
     return OpenAIReviewConfig(
         model="configured-structured-model",
-        api_key="sk-test-private-value",
+        api_key="synthetic-private-key",
         timeout_seconds=12.5,
     )
 
@@ -152,6 +153,31 @@ def test_explicit_request_sends_exact_payload_json_as_input() -> None:
     assert "raw_text" not in str(call["input"])
 
 
+def test_selected_ui_language_changes_only_the_system_language_instruction() -> None:
+    payload = _payload()
+    expected = _explanation()
+    responses = FakeResponses(
+        result=SimpleNamespace(
+            status="completed",
+            output_parsed=expected,
+            output=[],
+        )
+    )
+
+    generate_ai_explanation(
+        payload,
+        language="ja",
+        config=_config(),
+        client=FakeClient(responses),
+    )
+
+    call = responses.calls[0]
+    assert call["input"] == payload.model_dump_json(exclude_none=False)
+    assert call["instructions"] == build_ai_review_system_instruction("ja")
+    assert "natural technical Japanese" in str(call["instructions"])
+    assert "Never invent line numbers" in str(call["instructions"])
+
+
 def test_sdk_client_disables_automatic_retries() -> None:
     responses = FakeResponses(
         result=SimpleNamespace(
@@ -166,7 +192,7 @@ def test_sdk_client_disables_automatic_retries() -> None:
         generate_ai_explanation(_payload(), config=_config())
 
     client_factory.assert_called_once_with(
-        api_key="sk-test-private-value",
+        api_key="synthetic-private-key",
         timeout=12.5,
         max_retries=0,
     )
