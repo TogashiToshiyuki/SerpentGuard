@@ -272,6 +272,28 @@ def test_sg026_detector_xy_extent_completely_outside_supported_root_bounds() -> 
     assert finding.evidence["geometry_xy_bounds"] == [-10.0, 10.0, -10.0, 10.0]
 
 
+@pytest.mark.parametrize(
+    "uncertain_card",
+    [
+        "surf boundary px 0 0 10\n",
+        'include "geometry.inp"\n',
+    ],
+)
+def test_sg026_is_suppressed_when_retained_geometry_can_invalidate_bounds(
+    uncertain_card: str,
+) -> None:
+    report = _analyze(
+        "surf boundary sqc 0 0 10\n"
+        "cell domain 0 void -boundary\n"
+        "cell exterior 0 outside boundary\n"
+        f"{uncertain_card}"
+        "det remote dx 20 30 5 dy -1 1 5\n"
+    )
+
+    assert "SG026" not in [item.rule_id for item in report.findings]
+    assert "SG014" in [item.rule_id for item in report.findings]
+
+
 def test_sg027_unsupported_detector_option_is_info_and_preserved() -> None:
     parsed = parse_file(DETECTOR_FIXTURES / "valid_detector.inp")
     report = analyze_model(parsed)

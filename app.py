@@ -290,10 +290,21 @@ def _render_external_references(
         if st.button(t("reference.local.confirm"), type="primary"):
             local_project = st.session_state.get(_LOCAL_PROJECT_KEY)
             if isinstance(local_project, LocalProjectSource):
-                with st.spinner(t("reference.local.spinner")):
-                    report = local_project.resolve_pbed(authorize_supporting_files=True)
-                st.session_state[_REFERENCE_RESULT_KEY] = report
-                st.session_state.pop(_PBED_SLICE_RESULT_KEY, None)
+                try:
+                    with st.spinner(t("reference.local.spinner")):
+                        report = local_project.resolve_pbed(
+                            authorize_supporting_files=True
+                        )
+                except ReferencePolicyError as error:
+                    st.error(
+                        t(
+                            "reference.local.error",
+                            message=t(f"reference.policy.{error.code}"),
+                        )
+                    )
+                else:
+                    st.session_state[_REFERENCE_RESULT_KEY] = report
+                    st.session_state.pop(_PBED_SLICE_RESULT_KEY, None)
 
     if report.references:
         st.caption(t("reference.summary", count=len(report.references)))

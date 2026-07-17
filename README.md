@@ -67,12 +67,13 @@ to your OpenAI project that supports the Responses API and structured outputs. S
 [official structured-output guide](https://developers.openai.com/api/docs/guides/structured-outputs)
 and [API-key quickstart](https://developers.openai.com/api/docs/quickstart).
 
-The application does not automatically load `.env.example`; it documents variable
-names only. The optional API request occurs only after local analysis, visible payload
-preview, checkbox consent, and an explicit Generate button press. The request uses
-`store=False` and sends the `AIReviewPayload` JSON as its only user input. Local static
-findings remain visible if authentication, timeout, rate-limit, network, partial-output,
-or schema validation fails.
+The application reads these values only from the process environment. It does not
+automatically load `.env`, `.env.example`, or Streamlit secrets; `.env.example`
+documents variable names only. The optional API request occurs only after local
+analysis, visible payload preview, checkbox consent, and an explicit Generate button
+press. The request uses `store=False` and sends the `AIReviewPayload` JSON as its only
+user input. Local static findings remain visible if authentication, timeout,
+rate-limit, network, partial-output, or schema validation fails.
 
 ## Run locally
 
@@ -272,3 +273,9 @@ Only sanitized, redistributable fixtures should be added under `examples/`.
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+Official Serpent examples are linked only as research sources and are not
+redistributed under this project license. Repository fixtures are independently
+written; source citations and the unresolved upstream redistribution terms are
+documented in [`docs/example_sources.md`](docs/example_sources.md) and
+[`examples/README.md`](examples/README.md).

@@ -199,6 +199,20 @@ def test_sdk_client_disables_automatic_retries() -> None:
     assert len(responses.calls) == 1
 
 
+def test_sdk_client_initialization_failure_is_sanitized() -> None:
+    with (
+        patch(
+            "openai.OpenAI",
+            side_effect=ValueError("synthetic private runtime detail"),
+        ),
+        pytest.raises(AIReviewServiceError) as captured,
+    ):
+        generate_ai_explanation(_payload(), config=_config())
+
+    assert captured.value.code == "invalid_configuration"
+    assert "synthetic private runtime detail" not in str(captured.value)
+
+
 def test_system_instruction_contains_required_safety_constraints() -> None:
     instruction = AI_REVIEW_SYSTEM_INSTRUCTION.lower()
 

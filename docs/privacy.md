@@ -91,9 +91,16 @@ removes no local deterministic findings and does not weaken their severity.
 Local deterministic findings do not depend on payload construction and remain
 available if payload validation fails or the optional AI feature is unavailable.
 
+The optional parsed-model debugging view is also local-only and privacy-conscious:
+it removes every `raw_text` field, sanitizes absolute paths and secret-like strings,
+and omits the full token list for retained `pbed` and `include` reference cards. It is
+not an alternate path for sending data to the AI service.
+
 ## Local repository handling
 
-- Store secrets in `.env` or `.streamlit/secrets.toml`; both are ignored by Git.
+- Supply AI credentials through the process environment. `.env` and
+  `.streamlit/secrets.toml` are ignored by Git but are not loaded by SerpentGuard;
+  external shell tooling must export any locally stored values before startup.
 - Store unpublished inputs under `local_inputs/` or `private_inputs/`; both are ignored by Git.
 - Private external geometry data may instead be stored under `local_reference_data/`
   or `private_references/`; both are ignored by Git.

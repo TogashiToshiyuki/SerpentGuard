@@ -24,6 +24,28 @@ from serpentguard.models import (
 )
 
 UNRECOVERABLE_PARSER_CODES = frozenset({"PARSER_IO", "PARSER_ENCODING"})
+_BOUNDING_BOX_UNCERTAINTY_KEYWORDS = frozenset(
+    {
+        "cell",
+        "dtrans",
+        "ftrans",
+        "include",
+        "lat",
+        "nest",
+        "pbed",
+        "pin",
+        "solid",
+        "strans",
+        "surf",
+        "trans",
+        "transa",
+        "transb",
+        "transv",
+        "umsh",
+        "utrans",
+        "voro",
+    }
+)
 DefinitionT = TypeVar("DefinitionT", Surface, Cell, Material, EnergyGrid, Detector)
 
 
@@ -727,7 +749,10 @@ def _available_root_xy_bounds(
     model: ParsedModel,
     symbols: SymbolTable,
 ) -> _XYBounds | None:
-    if any(card.keyword in {"trans", "dtrans"} for card in model.unknown_cards):
+    if any(
+        card.keyword in _BOUNDING_BOX_UNCERTAINTY_KEYWORDS
+        for card in model.unknown_cards
+    ):
         return None
     boundary_names: list[str] = []
     for cell in model.cells:

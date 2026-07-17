@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Collection
 from typing import Any
 
+from serpentguard.ai_payload import sanitize_text
 from serpentguard.geometry import (
     ExcludedCell,
     GeometryExclusion,
@@ -29,6 +30,9 @@ SEVERITY_ORDER: tuple[DiagnosticSeverity, ...] = (
     "REVIEW",
     "INFO",
 )
+_DEBUG_MAX_STRING_LENGTH = 2_000
+_EXTERNAL_REFERENCE_CARD_KEYWORDS = frozenset({"include", "pbed"})
+_OMITTED_EXTERNAL_REFERENCE = "[external reference tokens omitted]"
 LOCALIZED_FINDING_RULE_IDS = frozenset(
     {
         "SG001",
@@ -273,9 +277,15 @@ def localized_reference_diagnostic_message(
 
 
 def parsed_model_debug_payload(model: ParsedModel) -> dict[str, Any]:
-    """Create parsed-model JSON data while omitting raw card text fields."""
+    """Create privacy-conscious parsed-model JSON for local debugging.
+
+    Raw card text is removed, all remaining strings pass through the same
+    path/secret sanitizer as the AI boundary, and target tokens for external
+    reference cards are omitted as a unit so quoted paths containing spaces cannot
+    leak partial path components.
+    """
     payload = model.model_dump(mode="json")
-    redacted = _remove_raw_text(payload)
+    redacted = _sanitize_debug_value(payload)
     if not isinstance(redacted, dict):
         raise TypeError("Parsed model payload must be a dictionary")
     return redacted
@@ -570,13 +580,27 @@ def _number(value: object) -> int | float | None:
     return value
 
 
-def _remove_raw_text(value: Any) -> Any:
+def _sanitize_debug_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _remove_raw_text(item)
+        sanitized = {
+            key: _sanitize_debug_value(item)
             for key, item in value.items()
             if key != "raw_text"
         }
+        keyword = sanitized.get("keyword")
+        tokens = sanitized.get("tokens")
+        if (
+            isinstance(keyword, str)
+            and keyword.lower() in _EXTERNAL_REFERENCE_CARD_KEYWORDS
+            and isinstance(tokens, list)
+        ):
+            sanitized["tokens"] = [
+                keyword,
+                _OMITTED_EXTERNAL_REFERENCE,
+            ]
+        return sanitized
     if isinstance(value, list):
-        return [_remove_raw_text(item) for item in value]
+        return [_sanitize_debug_value(item) for item in value]
+    if isinstance(value, str):
+        return sanitize_text(value, max_length=_DEBUG_MAX_STRING_LENGTH)
     return value

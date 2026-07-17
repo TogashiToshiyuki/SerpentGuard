@@ -118,6 +118,20 @@ def test_keywords_inside_other_cards_and_comments_are_not_definitions() -> None:
     assert [card.keyword for card in result.unknown_cards] == ["set"]
 
 
+def test_unknown_card_after_supported_definitions_keeps_its_own_location() -> None:
+    result = parse_text(
+        "surf boundary sqc 0 0 1\nmat coolant -1\n1001.09c -1\ncustom_option enabled\n",
+        file_name="unknown-after-supported.inp",
+    )
+
+    assert [surface.name for surface in result.surfaces] == ["boundary"]
+    assert [material.name for material in result.materials] == ["coolant"]
+    assert result.materials[0].location.line_end == 3
+    assert [card.keyword for card in result.unknown_cards] == ["custom_option"]
+    assert result.unknown_cards[0].location.line_start == 4
+    assert [diagnostic.code for diagnostic in result.diagnostics] == ["SG014"]
+
+
 def test_include_is_not_opened() -> None:
     result = parse_text('include "missing.inp"\n', file_name="main.inp")
 

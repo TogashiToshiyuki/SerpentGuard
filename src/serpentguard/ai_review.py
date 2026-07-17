@@ -193,11 +193,18 @@ def generate_ai_explanation(
     openai = _import_openai_sdk()
     active_client = client
     if active_client is None:
-        active_client = openai.OpenAI(
-            api_key=active_config.api_key,
-            timeout=active_config.timeout_seconds,
-            max_retries=0,
-        )
+        try:
+            active_client = openai.OpenAI(
+                api_key=active_config.api_key,
+                timeout=active_config.timeout_seconds,
+                max_retries=0,
+            )
+        except (TypeError, ValueError) as error:
+            raise AIReviewServiceError("invalid_configuration") from error
+        except OSError as error:
+            raise AIReviewServiceError("network") from error
+        except openai.OpenAIError as error:
+            raise AIReviewServiceError("api_failure") from error
 
     payload_json = payload.model_dump_json(exclude_none=False)
     try:

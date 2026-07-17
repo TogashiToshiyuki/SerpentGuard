@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from stat import S_ISREG
 from typing import BinaryIO, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -146,12 +147,19 @@ class SourceDocument:
         if self._canonical_path is None:  # pragma: no cover - construction invariant
             raise RuntimeError("Source document has no backing content")
         try:
-            return self._canonical_path.read_bytes()
+            with self._canonical_path.open("rb") as stream:
+                data = stream.read(limit + 1)
         except OSError as error:
             raise ReferencePolicyError(
                 "MAIN_READ_FAILED",
                 "The selected main input could not be read.",
             ) from error
+        if len(data) > limit:
+            raise ReferencePolicyError(
+                "MAIN_FILE_SIZE_LIMIT",
+                "The main input exceeds the configured byte limit.",
+            )
+        return data
 
 
 class UploadedSourceBundle:
@@ -271,11 +279,18 @@ class LocalProjectSource:
                 "MAIN_OUTSIDE_ROOT",
                 "The main input is outside the authorized local root.",
             )
+        try:
+            main_size = main.stat().st_size
+        except OSError as error:
+            raise ReferencePolicyError(
+                "MAIN_READ_FAILED",
+                "The selected main input could not be inspected.",
+            ) from error
 
         self._canonical_root = root
         self.main = SourceDocument(
             logical_name=main.relative_to(root).as_posix(),
-            size_bytes=main.stat().st_size,
+            size_bytes=main_size,
             _canonical_path=main,
         )
 
@@ -307,7 +322,11 @@ class LocalProjectSource:
                 continue
 
             candidate = self._canonical_root / PurePosixPath(reference.target_name)
-            canonical_candidate = candidate.resolve(strict=False)
+            try:
+                canonical_candidate = candidate.resolve(strict=False)
+            except (OSError, RuntimeError):
+                resolved.append(_read_failed_reference(reference))
+                continue
             if not _is_within(canonical_candidate, self._canonical_root):
                 resolved.append(
                     _policy_rejection(
@@ -319,10 +338,15 @@ class LocalProjectSource:
                     )
                 )
                 continue
-            if not canonical_candidate.exists():
+            try:
+                metadata = canonical_candidate.stat()
+            except FileNotFoundError:
                 resolved.append(_missing_reference(reference))
                 continue
-            if not canonical_candidate.is_file():
+            except OSError:
+                resolved.append(_read_failed_reference(reference))
+                continue
+            if not S_ISREG(metadata.st_mode):
                 resolved.append(
                     _policy_rejection(
                         reference,
@@ -331,8 +355,8 @@ class LocalProjectSource:
                     )
                 )
                 continue
+            size_bytes = metadata.st_size
 
-            size_bytes = canonical_candidate.stat().st_size
             if not authorize_supporting_files:
                 resolved.append(
                     ResolvedReference(
@@ -554,21 +578,9 @@ def _parse_document(
                 policy=policy.pbed,
             )
     except OSError:
-        return ResolvedReference(
-            reference=reference,
-            status="invalid",
+        return _read_failed_reference(
+            reference,
             file_size_bytes=document.size_bytes,
-            diagnostics=(
-                ReferenceDiagnostic(
-                    rule_id="SG017",
-                    code="REFERENCE_READ_FAILED",
-                    severity="ERROR",
-                    message="The authorized PBED target could not be read.",
-                    source_name=reference.source_name,
-                    line=reference.source_line,
-                    target_name=reference.target_name,
-                ),
-            ),
         )
     diagnostics = tuple(
         ReferenceDiagnostic(
@@ -599,6 +611,30 @@ def _parse_document(
         invalid_record_count=data.invalid_record_count if data is not None else None,
         pbed_data=data,
         diagnostics=diagnostics,
+    )
+
+
+def _read_failed_reference(
+    reference: ExternalReference,
+    *,
+    file_size_bytes: int | None = None,
+) -> ResolvedReference:
+    """Return one sanitized result for canonicalization, metadata, or read failure."""
+    return ResolvedReference(
+        reference=reference,
+        status="invalid",
+        file_size_bytes=file_size_bytes,
+        diagnostics=(
+            ReferenceDiagnostic(
+                rule_id="SG017",
+                code="REFERENCE_READ_FAILED",
+                severity="ERROR",
+                message="The authorized PBED target could not be read.",
+                source_name=reference.source_name,
+                line=reference.source_line,
+                target_name=reference.target_name,
+            ),
+        ),
     )
 
 

@@ -62,8 +62,10 @@ SG026 is deliberately conservative and REVIEW-only. It runs only when Universe `
 contains an `outside` Cell with one positive reference to one uniquely defined
 supported `cyl` or `sqc` surface, yielding an unambiguous XY bounding box. Both `dx`
 and `dy` must be valid, and the detector rectangle must be disjoint from that box.
-The check is disabled when a retained transformation card is present. No z bound is
-inferred because the supported surfaces are infinite in z.
+The check is disabled when a retained `include`, unsupported Cell/Surface, repeated-
+geometry, unstructured-geometry, PBED, or transformation card could make that root
+bound incomplete or ambiguous. No z bound is inferred because the supported surfaces
+are infinite in z.
 
 Unsupported detector options are retained with option-level locations and SG027 INFO.
 Malformed selected options use SG015 ERROR. SerpentGuard does not judge response

@@ -100,7 +100,7 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: 28 Python files already formatted.
-- pytest: 200 passed, 1 platform-permission skip.
+- pytest: 207 passed, 1 platform-permission skip.
 - Build: `serpentguard-0.1.0.tar.gz` and
   `serpentguard-0.1.0-py3-none-any.whl` built successfully.
 - Streamlit: health endpoint returned HTTP 200; an in-app browser rendered the title,

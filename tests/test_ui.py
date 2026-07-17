@@ -202,6 +202,26 @@ def test_parsed_model_debug_payload_omits_raw_card_text() -> None:
     assert "surf secret_surface cyl 0 0 1" not in serialized
 
 
+def test_parsed_model_debug_payload_redacts_paths_and_reference_tokens() -> None:
+    private_path = r"C:\Users\researcher\private project\main.inp"
+    parsed = parse_text(
+        'pbed bed background "C:\\Users\\researcher\\private project\\data.dat"\n',
+        file_name=private_path,
+    )
+
+    payload = parsed_model_debug_payload(parsed)
+    serialized = json.dumps(payload)
+
+    assert r"C:\Users" not in serialized
+    assert "researcher" not in serialized
+    assert "private project" not in serialized
+    assert payload["unknown_cards"][0]["tokens"] == [
+        "pbed",
+        "[external reference tokens omitted]",
+    ]
+    assert "raw_text" not in serialized
+
+
 def test_external_reference_rows_are_bilingual_and_keep_canonical_report() -> None:
     bundle = UploadedSourceBundle(
         main_name="main.inp",

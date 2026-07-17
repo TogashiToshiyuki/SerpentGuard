@@ -269,7 +269,11 @@ the next card boundary. This is a pragmatic boundary mechanism, not a complete S
 lexer. Supported `det` and `ene` cards use only the narrow forms above. Reserved cards
 outside the supported subset, including `include`, `set`, `pin`, and `lat`, are
 retained as `UnknownCard` with raw local span, tokens, location, and `SG014 INFO`. An
-otherwise unrecognized line-start token is also retained as a one-line unknown card.
+otherwise unrecognized alphabetic line-start token is also retained as a one-line
+unknown card instead of being absorbed into the preceding supported definition.
+`surf` and `cell` are always bounded to their documented single line. Ambiguous
+numeric continuation lines still follow the current card because SerpentGuard does
+not claim a complete lexer.
 
 Include cards remain unopened. Prompt 6B resolves only verified `pbed` external
 placement files through the explicit uploaded-bundle or authorized-root policy.

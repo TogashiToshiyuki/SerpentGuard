@@ -84,6 +84,7 @@ _SUPPORTED_SURFACE_TYPES = frozenset({"cyl", "sqc"})
 _UNSUPPORTED_REGION_CHARACTERS = frozenset("()#")
 _ZAID_PATTERN = re.compile(r"^\d+\.[A-Za-z0-9]+$")
 _INTEGER_PATTERN = re.compile(r"^[+-]?\d+$")
+_CARD_LIKE_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _DETECTOR_PARTICLES = frozenset({"n", "p", "g"})
 _DETECTOR_OPTION_KEYWORDS = frozenset(
     {
@@ -210,12 +211,21 @@ def _iter_card_spans(source: PreprocessedSource) -> list[_CardSpan]:
 
         normalized_keyword = keyword.lower()
         if normalized_keyword in KNOWN_CARD_KEYWORDS:
-            end_index = index + 1
-            while end_index < len(cleaned_lines):
-                next_token = _first_token(cleaned_lines[end_index])
-                if next_token is not None and next_token.lower() in KNOWN_CARD_KEYWORDS:
-                    break
-                end_index += 1
+            if normalized_keyword in {"surf", "cell"}:
+                # These supported forms are explicitly one-line cards. Keeping this
+                # boundary fixed prevents an immediately following unknown card from
+                # being swallowed and misreported as a malformed surf/cell card.
+                end_index = index + 1
+            else:
+                end_index = index + 1
+                while end_index < len(cleaned_lines):
+                    next_token = _first_token(cleaned_lines[end_index])
+                    if next_token is not None and _starts_new_card(
+                        next_token,
+                        current_keyword=normalized_keyword,
+                    ):
+                        break
+                    end_index += 1
         else:
             # An unrecognized first token has no trustworthy continuation grammar.
             end_index = index + 1
@@ -818,3 +828,21 @@ def _span_token_stream(span: _CardSpan) -> list[tuple[str, int]]:
 def _first_token(line: str) -> str | None:
     tokens = line.split(maxsplit=1)
     return tokens[0] if tokens else None
+
+
+def _starts_new_card(token: str, *, current_keyword: str) -> bool:
+    """Conservatively recognize a line-start card boundary.
+
+    Known keywords always start a new card. An otherwise unrecognized alphabetic
+    token is also treated as a one-line unknown card unless it is a documented
+    detector continuation token. Numeric material and energy-grid continuation
+    lines remain attached to their parent card.
+    """
+    normalized = token.lower()
+    if normalized in KNOWN_CARD_KEYWORDS:
+        return True
+    if current_keyword == "det" and (
+        normalized in _DETECTOR_PARTICLES or normalized in _DETECTOR_OPTION_KEYWORDS
+    ):
+        return False
+    return _CARD_LIKE_TOKEN_PATTERN.fullmatch(token) is not None

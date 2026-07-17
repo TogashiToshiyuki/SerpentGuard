@@ -14,6 +14,7 @@ from serpentguard.references import (
     INVALID_TARGET_MARKER,
     ExternalResolutionReport,
     LocalProjectSource,
+    ReferencePolicyError,
     ReferenceResolutionPolicy,
     UploadedSourceBundle,
     extract_pbed_references,
@@ -207,6 +208,58 @@ def test_local_root_preview_then_explicit_resolution(tmp_path: Path) -> None:
     assert preview.references[0].pbed_data is None
     assert resolved.references[0].status == "resolved"
     assert resolved.references[0].record_count == 1
+
+
+def test_local_main_growth_is_still_bounded_after_source_creation(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    main = root / "main.inp"
+    main.write_text("% small\n", encoding="utf-8")
+    project = LocalProjectSource(
+        main_path=main,
+        authorized_root=root,
+        policy=ReferenceResolutionPolicy(max_main_file_size_bytes=16),
+    )
+    main.write_bytes(b"x" * 17)
+
+    with pytest.raises(ReferencePolicyError) as error:
+        project.read_main_bytes()
+
+    assert error.value.code == "MAIN_FILE_SIZE_LIMIT"
+    assert str(root) not in str(error.value)
+
+
+def test_local_target_canonicalization_failure_becomes_sanitized_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    main = root / "main.inp"
+    target = root / "placements.dat"
+    main.write_text('pbed bed bg "placements.dat"\n', encoding="utf-8")
+    target.write_text("0 0 0 1 u\n", encoding="utf-8")
+    project = LocalProjectSource(main_path=main, authorized_root=root)
+    original_resolve = Path.resolve
+
+    def fail_target_resolve(
+        path: Path,
+        strict: bool = False,
+    ) -> Path:
+        if path.name == target.name:
+            raise OSError("synthetic metadata race")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", fail_target_resolve)
+    report = project.preview_pbed()
+
+    assert report.references[0].status == "invalid"
+    assert report.references[0].diagnostics[0].code == "REFERENCE_READ_FAILED"
+    serialized = json.dumps(report.model_dump(mode="json"))
+    assert str(root) not in serialized
+    assert "synthetic metadata race" not in serialized
 
 
 def test_local_root_escape_and_missing_are_rejected(tmp_path: Path) -> None:
