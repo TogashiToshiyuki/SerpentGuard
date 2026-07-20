@@ -242,7 +242,7 @@ def parse_pbed_binary(
                 severity="ERROR",
                 message="The PBED file is not valid UTF-8 and parsing stopped.",
                 source_name=source_name,
-                line=max(1, physical_lines + 1),
+                line=max(1, physical_lines),
             )
         )
         truncated = True

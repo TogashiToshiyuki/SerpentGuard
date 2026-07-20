@@ -51,8 +51,10 @@ secret-like value, or Serpent-card-like string remains.
 
 The analysis-purpose field is not a source-input channel. Percent-comment text and
 block-comment text are removed; text resembling a Serpent card is replaced rather
-than forwarded. This conservative policy may omit legitimate prose that resembles an
-input card.
+than forwarded. It does not affect deterministic findings and remains local unless
+the user reviews the visible AI payload, gives consent, and explicitly presses
+Generate. Only the sanitized purpose displayed in that payload preview is then sent.
+This conservative policy may omit legitimate prose that resembles an input card.
 
 Streamlit shows the complete versioned JSON before the send action. The consent
 checkbox states: “I have reviewed the data shown above and agree to send this JSON for

@@ -104,6 +104,7 @@ def test_size_record_encoding_and_empty_limits() -> None:
     assert invalid_encoding.data is not None
     assert invalid_encoding.data.truncated
     assert invalid_encoding.diagnostics[-1].code == "PBED_ENCODING"
+    assert invalid_encoding.diagnostics[-1].line == 2
 
     empty = parse_pbed_binary(
         io.BytesIO(b"\n  \n"),

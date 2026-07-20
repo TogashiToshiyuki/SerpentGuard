@@ -67,20 +67,25 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         ),
         "upload.supporting.label": "Supporting files (optional)",
         "upload.supporting.help": (
-            "These files are accepted for workflow preparation only. Include "
-            "resolution is not implemented, so they are not opened or analyzed."
+            "Supporting files remain local. After Run check, SerpentGuard may open "
+            "and parse locally only files referenced by a supported PBED card. "
+            "General include resolution is not implemented."
         ),
         "upload.supporting.caption": (
-            "{count} supporting file(s) selected. They will not be opened in this "
-            "milestone."
+            "{count} supporting file(s) selected and kept local. Only files "
+            "referenced by a supported PBED card may be opened and parsed after Run "
+            "check; unreferenced files remain unused. General include resolution is "
+            "not implemented."
         ),
         "purpose.label": "Purpose (optional)",
         "purpose.placeholder": (
             "For example: preflight review before a local Serpent run"
         ),
         "purpose.help": (
-            "This note stays local and does not change deterministic findings in "
-            "this milestone."
+            "This note does not affect deterministic findings and remains local "
+            "unless you later review the AI payload, give consent, and press "
+            "Generate AI explanation. Only the sanitized purpose visible in the "
+            "payload preview is then sent."
         ),
         "run.button": "Run check",
         "run.help": "Upload a main input file to enable deterministic analysis.",
@@ -559,18 +564,23 @@ TRANSLATION_CATALOG: dict[SupportedLanguage, dict[str, str]] = {
         ),
         "upload.supporting.label": "補助ファイル（任意）",
         "upload.supporting.help": (
-            "将来のinclude解決に備えて選択できます．このマイルストーンではinclude解決を"
-            "実装していないため，ファイルの内容は開かず，解析にも使用しません．"
+            "補助ファイルはローカルに保持されます．「検査を実行」を押した際に，対応する"
+            "PBEDカードから参照されたファイルだけをローカルで開いて解析する場合が"
+            "あります．一般的なinclude解決は実装していません．"
         ),
         "upload.supporting.caption": (
-            "補助ファイルが{count}件選択されています．このマイルストーンでは内容を"
-            "開きません．"
+            "補助ファイルを{count}件選択しました．すべてローカルに保持されます．"
+            "「検査を実行」を押した際に，対応するPBEDカードから参照されたファイルだけを"
+            "ローカルで開いて解析する場合があり，未参照ファイルは使用しません．一般的な"
+            "include解決は実装していません．"
         ),
         "purpose.label": "解析目的（任意）",
         "purpose.placeholder": "例：ローカルでSerpentを実行する前の事前確認",
         "purpose.help": (
-            "このメモはローカルに保持され，このマイルストーンの決定論的な検出結果には"
-            "影響しません．"
+            "このメモは決定論的な検出結果に影響しません．後でAIペイロードを確認し，"
+            "同意したうえで「AIによる説明を生成」を押さない限り，ローカルに保持されます．"
+            "送信されるのは，ペイロードプレビューに表示されたサニタイズ済みの解析目的"
+            "だけです．"
         ),
         "run.button": "検査を実行",
         "run.help": (
@@ -1024,13 +1034,15 @@ _EXTERNAL_REFERENCE_TRANSLATIONS: dict[SupportedLanguage, dict[str, str]] = {
         "source.mode.uploaded_bundle": "Uploaded file bundle",
         "source.mode.local_project": "Authorized local project",
         "upload.supporting.help": (
-            "Upload only PBED files explicitly referenced by the main input. "
-            "SerpentGuard resolves them by normalized relative name; other files "
-            "remain unused."
+            "Supporting files remain local. After Run check, SerpentGuard may open "
+            "and parse locally only files referenced by a supported PBED card. "
+            "General include resolution is not implemented."
         ),
         "upload.supporting.caption": (
-            "{count} supporting file(s) selected. Referenced PBED files will be read "
-            "only after Run check is pressed."
+            "{count} supporting file(s) selected and kept local. Only files "
+            "referenced by a supported PBED card may be opened and parsed after Run "
+            "check; unreferenced files remain unused. General include resolution is "
+            "not implemented."
         ),
         "local.main.label": "Main local input path",
         "local.main.help": (
@@ -1220,12 +1232,15 @@ _EXTERNAL_REFERENCE_TRANSLATIONS: dict[SupportedLanguage, dict[str, str]] = {
         "source.mode.uploaded_bundle": "アップロードしたファイル一式",
         "source.mode.local_project": "許可したローカルプロジェクト",
         "upload.supporting.help": (
-            "メイン入力から明示的に参照されるPBEDファイルだけをアップロードしてください。"
-            "SerpentGuardは正規化した相対名で解決し，それ以外は未使用として扱います。"
+            "補助ファイルはローカルに保持されます．「検査を実行」を押した際に，対応する"
+            "PBEDカードから参照されたファイルだけをローカルで開いて解析する場合が"
+            "あります．一般的なinclude解決は実装していません．"
         ),
         "upload.supporting.caption": (
-            "補助ファイルを{count}件選択しました。参照されたPBEDファイルは，"
-            "［検査を実行］を押した後にだけ読み取ります。"
+            "補助ファイルを{count}件選択しました．すべてローカルに保持されます．"
+            "「検査を実行」を押した際に，対応するPBEDカードから参照されたファイルだけを"
+            "ローカルで開いて解析する場合があり，未参照ファイルは使用しません．一般的な"
+            "include解決は実装していません．"
         ),
         "local.main.label": "ローカルのメイン入力パス",
         "local.main.help": (

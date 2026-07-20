@@ -110,9 +110,10 @@ previewed payload or weaken its fixed safety requirements.
 Choose one input mode at the top of the application:
 
 - **Uploaded file bundle:** upload one main input and only the supporting files you
-  intend to make available. A supported relative PBED reference is matched by
-  normalized, case-insensitive Windows-style name. Unreferenced uploads are reported
-  as unused.
+  intend to make available. Supporting files remain local. After Run check, only a
+  file referenced by the supported PBED card may be opened and parsed locally, using
+  its normalized, case-insensitive Windows-style name. Unreferenced uploads are
+  reported as unused; general `include` resolution is not implemented.
 - **Authorized local project:** enter one main file and an independent authorized
   root. SerpentGuard first reads the main file and previews canonical in-root targets.
   Supporting PBED content is opened only after a second explicit authorization action.

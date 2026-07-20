@@ -74,6 +74,27 @@ def test_placeholder_interpolation_is_safe_in_both_languages() -> None:
         translate("upload.supporting.caption", ENGLISH)
 
 
+def test_supporting_file_and_purpose_help_describe_privacy_boundaries() -> None:
+    english_support = translate("upload.supporting.help", ENGLISH)
+    japanese_support = translate("upload.supporting.help", JAPANESE)
+    english_caption = translate("upload.supporting.caption", ENGLISH, count=2)
+    japanese_caption = translate("upload.supporting.caption", JAPANESE, count=2)
+    english_purpose = translate("purpose.help", ENGLISH)
+    japanese_purpose = translate("purpose.help", JAPANESE)
+
+    assert "remain local" in english_support
+    assert "supported PBED card" in english_support
+    assert "General include resolution is not implemented" in english_support
+    assert "unreferenced files remain unused" in english_caption
+    assert "ローカルに保持" in japanese_support
+    assert "PBEDカードから参照されたファイルだけ" in japanese_support
+    assert "一般的なinclude解決は実装していません" in japanese_caption
+    assert "does not affect deterministic findings" in english_purpose
+    assert "sanitized purpose visible in the payload preview" in english_purpose
+    assert "決定論的な検出結果に影響しません" in japanese_purpose
+    assert "サニタイズ済みの解析目的だけ" in japanese_purpose
+
+
 def test_missing_requested_language_falls_back_to_english(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
