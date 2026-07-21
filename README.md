@@ -16,6 +16,35 @@ detector-purpose/response-physics review or general include resolution is implem
 
 The supported runtime is Python 3.11 or newer. SerpentGuard has no database and is intended to run locally rather than as an externally deployed server.
 
+## Demo video
+
+Watch the public, audio-narrated demonstration:
+[SerpentGuard Devpost Final](https://youtu.be/9TfTaqHja2Q). The video uses only
+the independently written synthetic fixtures under `examples/demo/`; none of the
+shown inputs is a production reactor model.
+
+## Built with Codex and GPT-5.6
+
+SerpentGuard was developed for the OpenAI Build Week Developer Tools track with
+Codex using GPT-5.6. The work was organized into inspect-first milestones: establish
+the parser and deterministic finding contract, add the bilingual workflow and limited
+geometry sampler, harden external-reference and privacy boundaries, integrate the
+optional structured AI explanation, and complete a release audit.
+
+Codex accelerated repository inspection, cross-module implementation and refactoring,
+test generation, failure-driven corrections, documentation, and the final privacy and
+release-readiness review. GPT-5.6 helped reason across the parser, typed models,
+analysis rules, Streamlit state, geometry sampling, privacy allowlist, and tests while
+keeping their contracts aligned.
+
+The developer made the central product and safety decisions: deterministic analysis
+remains local and authoritative; the supported syntax is deliberately narrow;
+unsupported cases are rejected or disclosed rather than guessed; raw input must never
+enter the AI payload; and any optional AI request requires visible payload preview,
+explicit consent, and an explicit Generate action. Codex output was reviewed rather
+than accepted as authority, with behavior verified through automated tests, manual
+demo checks, and documented limitations.
+
 ## Setup
 
 Create and activate a virtual environment:
